@@ -1,8 +1,7 @@
 package com.attendance.demo.controller;
 
-
-
-import com.attendance.demo.dto.CreateUserDTO;
+import com.attendance.demo.dto.users.LoginUserDTO;
+import com.attendance.demo.dto.users.RegisterUserDTO;
 import com.attendance.demo.entity.User;
 import com.attendance.demo.service.UserService;
 import jakarta.servlet.http.HttpServletRequest;
@@ -30,8 +29,13 @@ public class UserController {
     public List<User> getUsers(){
         return this.userService.getUsers();
     }
-    @PostMapping("/users")
-    public User createUser(@RequestBody CreateUserDTO newUserInfo){
-        return this.userService.createUser(newUserInfo);
+    @PostMapping("/register")
+    public User registerUser(@RequestBody RegisterUserDTO newUserInfo){
+        return this.userService.registerUser(newUserInfo);
+    }
+
+    @PostMapping("/login")
+    public String loginUser(@RequestBody LoginUserDTO loginUserInfo){
+        return this.userService.verify(loginUserInfo);
     }
 }

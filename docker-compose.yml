@@ -1,0 +1,29 @@
+services:
+  postgresql:
+    image: postgres:17
+    container_name: attendance-app-db
+    env_file:
+      - .env.properties
+    environment:
+      POSTGRES_DB: ${DB_NAME}
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  backend:
+    build: ./backend
+    container_name: attendance-backend
+    depends_on:
+      - postgresql
+    env_file:
+      - .env.properties
+    ports:
+      - "8080:8080"
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+
+volumes:
+  postgres_data:
