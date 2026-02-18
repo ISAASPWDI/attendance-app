@@ -1,4 +1,4 @@
-package com.attendance.demo.service;
+package com.attendance.demo.service.users;
 
 import com.attendance.demo.config.CustomUserDetails;
 import com.attendance.demo.entity.User;

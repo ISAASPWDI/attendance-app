@@ -1,6 +1,6 @@
 package com.attendance.demo.config;
-import com.attendance.demo.service.CustomUserDetailsService;
-import com.attendance.demo.service.JWTService;
+import com.attendance.demo.service.users.CustomUserDetailsService;
+import com.attendance.demo.service.auth.JWTService;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
