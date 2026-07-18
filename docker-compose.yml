@@ -2,6 +2,7 @@ services:
   postgresql:
     image: postgres:17
     container_name: attendance-app-db
+    restart: unless-stopped
     env_file:
       - .env.properties
     environment:

@@ -1,38 +1,178 @@
 package com.attendance.demo.service.attendances;
 
+import com.attendance.demo.dto.attendances.AttendanceRecordResponseDTO;
+import com.attendance.demo.dto.attendances.AttendanceRecordWithUserDTO;
+import com.attendance.demo.dto.attendances.DashboardSummaryDTO;
 import com.attendance.demo.dto.attendances.AttendanceRecordDTO;
+import com.attendance.demo.dto.filter.AttendanceFilter;
 import com.attendance.demo.entity.AttendanceRecord;
-import com.attendance.demo.exception.attendances.RecordException;
+import com.attendance.demo.entity.User;
+import com.attendance.demo.exception.attendances.RecordAlreadyExistsException;
+import com.attendance.demo.exception.attendances.RecordNotFoundException;
+import com.attendance.demo.exception.users.UserNotFoundException;
 import com.attendance.demo.repository.AttendanceRepository;
+import com.attendance.demo.repository.UserRepository;
+import com.attendance.demo.specification.AttendanceSpecification;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.List;
-import java.util.Optional;
+import java.time.LocalDate;
+import java.time.LocalTime;
 
 @Service
 public class AttendanceRecordService {
 
+    private static final LocalTime CHECK_IN_CUTOFF = LocalTime.of(7, 30);
+    private static final LocalTime CHECK_OUT_MIN   = LocalTime.of(13, 0);
+
     @Autowired
     private AttendanceRepository attendanceRepository;
 
+    @Autowired
+    private UserRepository userRepository;
+
+    // ── TEACHER endpoints ─────────────────────────────────────────────────────
+
+    /** Manual check-in (custom time + status). */
     @Transactional
-    public AttendanceRecord create(AttendanceRecordDTO attendanceInfo) {
-        Optional<AttendanceRecord> existingRecord = this.attendanceRepository.findById(attendanceInfo.getAttendanceId());
-        if ( existingRecord.isPresent() ) throw new RecordException(attendanceInfo.getAttendanceId());
+    public AttendanceRecordResponseDTO create(AttendanceRecordDTO dto, Long userId) {
+        if (attendanceRepository.findByUserIdAndDate(userId, dto.getDate()).isPresent()) {
+            throw new RecordAlreadyExistsException(dto.getDate());
+        }
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new UserNotFoundException(userId));
 
-        AttendanceRecord newRecord = new AttendanceRecord();
-        newRecord.setTimeIn(attendanceInfo.getTimeIn());
-        newRecord.setTimeOut(attendanceInfo.getTimeOut());
-        newRecord.setStatus(AttendanceRecord.Status.valueOf(attendanceInfo.getStatus()));
-        newRecord.setNotes(attendanceInfo.getNotes());
+        AttendanceRecord r = new AttendanceRecord();
+        r.setUser(user);
+        r.setDate(dto.getDate());
+        r.setTimeIn(dto.getTimeIn());
+        r.setTimeOut(dto.getTimeOut());
+        r.setStatus(AttendanceRecord.Status.valueOf(dto.getStatus()));
+        r.setNotes(dto.getNotes());
 
-        return this.attendanceRepository.save(newRecord);
+        return toDTO(attendanceRepository.save(r));
     }
 
-    @Transactional( readOnly = true )
-    public List<AttendanceRecord> getAll() {
-        return this.attendanceRepository.findAll();
+    /** Quick check-in at current time; status auto-calculated vs 7:30 cutoff. */
+    @Transactional
+    public AttendanceRecordResponseDTO quickCheckIn(Long userId) {
+        LocalDate today = LocalDate.now();
+        if (attendanceRepository.findByUserIdAndDate(userId, today).isPresent()) {
+            throw new RecordAlreadyExistsException(today);
+        }
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new UserNotFoundException(userId));
+
+        LocalTime now = LocalTime.now();
+        AttendanceRecord.Status status = now.isAfter(CHECK_IN_CUTOFF)
+                ? AttendanceRecord.Status.Late
+                : AttendanceRecord.Status.Present;
+
+        AttendanceRecord r = new AttendanceRecord();
+        r.setUser(user);
+        r.setDate(today);
+        r.setTimeIn(now);
+        r.setStatus(status);
+
+        return toDTO(attendanceRepository.save(r));
+    }
+
+    /** Quick check-out at current time. Only allowed after 13:00. */
+    @Transactional
+    public AttendanceRecordResponseDTO quickCheckOut(Long userId) {
+        LocalTime now = LocalTime.now();
+        if (now.isBefore(CHECK_OUT_MIN)) {
+            throw new IllegalStateException("La salida rápida solo está habilitada después de la 1:00 PM");
+        }
+        AttendanceRecord r = attendanceRepository
+                .findByUserIdAndDate(userId, LocalDate.now())
+                .orElseThrow(() -> new RecordNotFoundException(
+                        "No se encontró registro de asistencia de hoy para este docente"));
+
+        r.setTimeOut(now);
+        return toDTO(attendanceRepository.save(r));
+    }
+
+    /** Returns today's attendance record for the authenticated teacher, if any. */
+    @Transactional(readOnly = true)
+    public AttendanceRecordResponseDTO getTodayRecord(Long userId) {
+        return attendanceRepository.findByUserIdAndDate(userId, LocalDate.now())
+                .map(this::toDTO)
+                .orElse(null);
+    }
+
+    /** Partial update (PATCH) of an existing record. */
+    @Transactional
+    public AttendanceRecordResponseDTO patch(Long recordId, AttendanceRecordDTO dto, Long userId) {
+        AttendanceRecord r = attendanceRepository.findById(recordId)
+                .orElseThrow(() -> new RecordNotFoundException(recordId));
+
+        if (dto.getDate() != null)   r.setDate(dto.getDate());
+        if (dto.getTimeIn() != null) r.setTimeIn(dto.getTimeIn());
+        if (dto.getTimeOut() != null) r.setTimeOut(dto.getTimeOut());
+        if (dto.getStatus() != null) r.setStatus(AttendanceRecord.Status.valueOf(dto.getStatus()));
+        if (dto.getNotes() != null)  r.setNotes(dto.getNotes());
+
+        return toDTO(attendanceRepository.save(r));
+    }
+
+    // ── DIRECTOR endpoints ────────────────────────────────────────────────────
+
+    /** Paginated attendance records with optional filters (director view). */
+    @Transactional(readOnly = true)
+    public Page<AttendanceRecordWithUserDTO> getAttendancePage(AttendanceFilter filter, Pageable pageable) {
+        Specification<AttendanceRecord> spec = AttendanceSpecification.filter(filter);
+        return attendanceRepository.findAll(spec, pageable).map(this::toWithUserDTO);
+    }
+
+    /** Delete all records for a specific date and return count of deleted records. */
+    @Transactional
+    public long deleteByDate(LocalDate date) {
+        long count = attendanceRepository.countByDate(date);
+        attendanceRepository.deleteByDate(date);
+        return count;
+    }
+
+    /** Dashboard summary: totals and today's attendance stats. */
+    @Transactional(readOnly = true)
+    public DashboardSummaryDTO getDashboardSummary() {
+        LocalDate today = LocalDate.now();
+        long totalRecords  = attendanceRepository.count();
+        long presentToday  = attendanceRepository.countByStatusAndDate(AttendanceRecord.Status.Present, today);
+        long lateToday     = attendanceRepository.countByStatusAndDate(AttendanceRecord.Status.Late, today);
+        long totalTeachers = userRepository.countByRole(User.Role.TEACHER);
+        long absentToday   = Math.max(0, totalTeachers - presentToday - lateToday);
+
+        return new DashboardSummaryDTO(totalRecords, presentToday, lateToday, absentToday);
+    }
+
+    // ── Mappers ───────────────────────────────────────────────────────────────
+
+    private AttendanceRecordResponseDTO toDTO(AttendanceRecord r) {
+        AttendanceRecordResponseDTO dto = new AttendanceRecordResponseDTO();
+        dto.setId(r.getId());
+        dto.setDate(r.getDate());
+        dto.setTimeIn(r.getTimeIn());
+        dto.setTimeOut(r.getTimeOut());
+        dto.setStatus(r.getStatus().name());
+        dto.setNotes(r.getNotes());
+        return dto;
+    }
+
+    private AttendanceRecordWithUserDTO toWithUserDTO(AttendanceRecord r) {
+        return new AttendanceRecordWithUserDTO(
+                r.getId(),
+                r.getUser().getId(),
+                r.getUser().getFullName(),
+                r.getDate(),
+                r.getTimeIn(),
+                r.getTimeOut(),
+                r.getStatus().name(),
+                r.getNotes()
+        );
     }
 }

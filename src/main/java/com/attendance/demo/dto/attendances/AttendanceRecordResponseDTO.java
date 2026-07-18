@@ -1,4 +1,5 @@
 package com.attendance.demo.dto.attendances;
+
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Null;
 import lombok.AllArgsConstructor;
@@ -9,12 +10,17 @@ import java.time.LocalDate;
 import java.time.LocalTime;
 
 @Data
-@NoArgsConstructor
 @AllArgsConstructor
-public class AttendanceRecordDTO {
+@NoArgsConstructor
+public class AttendanceRecordResponseDTO {
 
+    // TODO: change this.
 //    @NotNull
-//    private Long attendanceId;
+//    private LocalTime startTime;
+//    @NotNull
+//    private LocalTime endTime;
+    @NotNull
+    private Long id;
 
     @NotNull
     private LocalDate date;

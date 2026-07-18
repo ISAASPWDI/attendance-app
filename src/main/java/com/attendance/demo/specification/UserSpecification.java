@@ -22,16 +22,14 @@ public class UserSpecification {
             Join<User, AttendanceRecord> attendanceRecordJoin = root.join("attendanceRecords", JoinType.LEFT);
             List<Predicate> predicates = new ArrayList<>();
 
-            // filtro por username (LIKE %username%)
-            if ( userFilter.getUsername() != null ) {
-                Expression<String> field =  criteriaBuilder.lower(root.get("username"));
+            // filtro por username, nombre o apellido (LIKE %texto%)
+            if ( userFilter.getUsername() != null && !userFilter.getUsername().isBlank() ) {
                 String value = "%" + userFilter.getUsername().toLowerCase() + "%";
-                predicates.add( criteriaBuilder.like(field, value));
-            }
-
-            // filtro por estado
-            if ( userFilter.getStatus() != null){
-                predicates.add( criteriaBuilder.equal(root.get("status"), userFilter.getStatus()));
+                predicates.add( criteriaBuilder.or(
+                        criteriaBuilder.like(criteriaBuilder.lower(root.get("username")), value),
+                        criteriaBuilder.like(criteriaBuilder.lower(root.get("firstName")), value),
+                        criteriaBuilder.like(criteriaBuilder.lower(root.get("lastName")), value)
+                ));
             }
 
             // filtro por fecha desde

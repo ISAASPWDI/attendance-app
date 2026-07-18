@@ -14,7 +14,12 @@ public class RegisterUserDTO {
     @NotNull
     public String password;
 
+    @NotNull
+    public String email;
 
-    public User.Role role = User.Role.valueOf("TEACHER");
+    public String firstName;
 
+    public String lastName;
+
+    public User.Role role = User.Role.TEACHER;
 }

@@ -39,6 +39,17 @@ public class UserExceptionHandler{
         );
         return new ResponseEntity<>(errorResponse, HttpStatus.BAD_REQUEST);
     }
+    @ExceptionHandler(SelfDeleteException.class)
+    public ResponseEntity<ErrorResponse> handleSelfDelete(SelfDeleteException ex, WebRequest request) {
+        ErrorResponse errorResponse = new ErrorResponse(
+                HttpStatus.BAD_REQUEST.value(),
+                "Cannot delete own account",
+                ex.getMessage(),
+                request.getDescription(false).replace("uri=", " ")
+        );
+        return new ResponseEntity<>(errorResponse, HttpStatus.BAD_REQUEST);
+    }
+
     @ExceptionHandler(BadCredentialsException.class)
     public ResponseEntity<ErrorResponse> handleBadCredentials(
             BadCredentialsException ex,

@@ -1,6 +1,8 @@
 package com.attendance.demo.service.users;
-import com.attendance.demo.dto.attendances.AttendanceRecordDTO;
+
+import com.attendance.demo.dto.attendances.AttendanceRecordResponseDTO;
 import com.attendance.demo.dto.filter.UserFilter;
+import com.attendance.demo.dto.users.UpdateUserDTO;
 import com.attendance.demo.dto.users.UserDetailDTO;
 import com.attendance.demo.entity.User;
 import com.attendance.demo.exception.users.UserNotFoundException;
@@ -11,6 +13,8 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
 import java.util.List;
 
 @Service
@@ -19,89 +23,85 @@ public class UserService {
     @Autowired
     UserRepository userRepository;
 
-
-//    public Pageable buildPageable(UserFilter userFilter, int page, int size){
-//
-//
-//        Sort sort = Sort.unsorted();
-//
-//        //valor por defecto en caso no cuumplan los conmdicionales
-//        Sort.Direction direction = Sort.Direction.ASC;
-//
-//        if ( userFilter.getOrder() != null){
-//            direction = switch ( userFilter.getOrder() ){
-//                case NEWEST -> Sort.Direction.ASC;
-//                case OLDEST -> Sort.Direction.DESC;
-//            };
-//
-//        }
-//
-//        if ( userFilter.getSortBy() != null ) {
-//            String sortBy = switch ( userFilter.getSortBy() ) {
-//                case Date -> "date";
-//                case Name -> "username";
-//                case Status -> "status";
-//            };
-//            sort = Sort.by(direction, sortBy);
-//        }
-//        // ejemplo de como quedan los datos
-//        /*
-//        page = 0
-//        size = 5
-//        sort = username ASC
-//        */
-//        return PageRequest.of(page, size, sort);
-//    }
-
+    @Transactional(readOnly = true)
     public Page<UserDetailDTO> getUsersAndAttendanceRecords(UserFilter userFilter, Pageable pageable) {
-
         Specification<User> spec = UserSpecification.filter(userFilter);
-
-        return this.userRepository.findAll(spec, pageable).map(( user ) -> new UserDetailDTO(
-                user.getId(),
-                user.getUsername(),
-                user.getRole().name(),
-                user.getAttendanceRecords().stream().map(
-                        ( attendanceRecord) ->
-                                new AttendanceRecordDTO(
-                                        attendanceRecord.getId(),
-                                        attendanceRecord.getDate(),
-                                        attendanceRecord.getTimeIn(),
-                                        attendanceRecord.getTimeOut(),
-                                        attendanceRecord.getStatus().name(),
-                                        attendanceRecord.getNotes()
-                                )
-                ).toList()
-        ) );
+        return userRepository.findAll(spec, pageable).map(this::toDetailDTO);
     }
 
+    @Transactional(readOnly = true)
     public UserDetailDTO getUserById(Long id) {
-
         User user = userRepository.findById(id)
                 .orElseThrow(() -> new UserNotFoundException(id));
+        return toDetailDTO(user);
+    }
 
-        List<AttendanceRecordDTO> attendanceDTOs = user.getAttendanceRecords()
-                .stream()
-                .map(record -> {
-                    AttendanceRecordDTO dto = new AttendanceRecordDTO();
-                    dto.setAttendanceId(record.getId());
-                    dto.setDate(record.getDate());
-                    dto.setTimeIn(record.getTimeIn());
-                    dto.setTimeOut(record.getTimeOut());
-                    dto.setStatus(record.getStatus().name());
-                    dto.setNotes(record.getNotes());
-                    return dto;
-                })
+    @Transactional
+    public void updateSignatureUrl(Long userId, String url) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new UserNotFoundException(userId));
+        user.setSignatureUrl(url);
+        userRepository.save(user);
+    }
+
+    @Transactional
+    public void updateFingerprintUrl(Long userId, String url) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new UserNotFoundException(userId));
+        user.setFingerprintUrl(url);
+        userRepository.save(user);
+    }
+
+    @Transactional
+    public void updatePhotoUrl(Long userId, String url) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new UserNotFoundException(userId));
+        user.setPhotoUrl(url);
+        userRepository.save(user);
+    }
+
+    @Transactional
+    public UserDetailDTO updateUser(Long userId, UpdateUserDTO dto, boolean requesterIsDirector) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new UserNotFoundException(userId));
+
+        if (dto.getFirstName() != null) user.setFirstName(dto.getFirstName());
+        if (dto.getLastName() != null) user.setLastName(dto.getLastName());
+        if (requesterIsDirector && dto.getRole() != null) user.setRole(dto.getRole());
+
+        return toDetailDTO(userRepository.save(user));
+    }
+
+    @Transactional
+    public void deleteUser(Long userId) {
+        if (!userRepository.existsById(userId)) {
+            throw new UserNotFoundException(userId);
+        }
+        userRepository.deleteById(userId);
+    }
+
+    private UserDetailDTO toDetailDTO(User user) {
+        List<AttendanceRecordResponseDTO> records = user.getAttendanceRecords() == null
+                ? List.of()
+                : user.getAttendanceRecords().stream()
+                .map(r -> new AttendanceRecordResponseDTO(
+                        r.getId(),
+                        r.getDate(),
+                        r.getTimeIn(),
+                        r.getTimeOut(),
+                        r.getStatus().name(),
+                        r.getNotes()
+                ))
                 .toList();
 
         return new UserDetailDTO(
                 user.getId(),
                 user.getUsername(),
+                user.getFirstName(),
+                user.getLastName(),
                 user.getRole().name(),
-                attendanceDTOs
+                user.getPhotoUrl(),
+                records
         );
     }
-//    public Optional<User> findUserByUsername(String username){
-//        return this.userRepository.findByUsername(username);
-//    }
 }

@@ -1,6 +1,5 @@
 package com.attendance.demo.dto.attendances;
-import jakarta.validation.constraints.NotNull;
-import jakarta.validation.constraints.Null;
+
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -9,25 +8,15 @@ import java.time.LocalDate;
 import java.time.LocalTime;
 
 @Data
-@NoArgsConstructor
 @AllArgsConstructor
-public class AttendanceRecordDTO {
-
-//    @NotNull
-//    private Long attendanceId;
-
-    @NotNull
+@NoArgsConstructor
+public class AttendanceRecordWithUserDTO {
+    private Long id;
+    private Long teacherId;
+    private String teacherName;
     private LocalDate date;
-
-    @NotNull
     private LocalTime timeIn;
-
-    @Null
     private LocalTime timeOut;
-
-    @NotNull
     private String status;
-
-    @Null
     private String notes;
 }

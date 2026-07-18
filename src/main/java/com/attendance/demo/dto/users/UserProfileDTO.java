@@ -1,21 +1,17 @@
 package com.attendance.demo.dto.users;
 
-import com.attendance.demo.dto.attendances.AttendanceRecordResponseDTO;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-import java.util.List;
-
 @Data
 @AllArgsConstructor
 @NoArgsConstructor
-public class UserDetailDTO {
+public class UserProfileDTO {
     private Long id;
     private String username;
     private String firstName;
     private String lastName;
     private String role;
     private String photoUrl;
-    private List<AttendanceRecordResponseDTO> attendanceRecords;
 }
