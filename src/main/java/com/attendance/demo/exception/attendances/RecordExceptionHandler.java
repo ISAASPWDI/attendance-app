@@ -22,6 +22,16 @@ public class RecordExceptionHandler {
         return build(HttpStatus.BAD_REQUEST, "Hora de salida inválida", ex.getMessage(), request);
     }
 
+    @ExceptionHandler(RecordTimeInWindowException.class)
+    public ResponseEntity<ErrorResponse> handleRecordTimeInWindow(RecordTimeInWindowException ex, WebRequest request) {
+        return build(HttpStatus.BAD_REQUEST, "Fuera de horario de entrada", ex.getMessage(), request);
+    }
+
+    @ExceptionHandler(RecordTimeOutWindowException.class)
+    public ResponseEntity<ErrorResponse> handleRecordTimeOutWindow(RecordTimeOutWindowException ex, WebRequest request) {
+        return build(HttpStatus.BAD_REQUEST, "Fuera de horario de salida", ex.getMessage(), request);
+    }
+
     @ExceptionHandler(RecordNotFoundException.class)
     public ResponseEntity<ErrorResponse> handleRecordNotFound(RecordNotFoundException ex, WebRequest request) {
         return build(HttpStatus.NOT_FOUND, "Registro no encontrado", ex.getMessage(), request);

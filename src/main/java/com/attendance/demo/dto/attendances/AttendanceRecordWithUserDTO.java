@@ -15,6 +15,7 @@ public class AttendanceRecordWithUserDTO {
     private Long teacherId;
     private String teacherName;
     private LocalDate date;
+    private String dayOfWeek;
     private LocalTime timeIn;
     private LocalTime timeOut;
     private String status;

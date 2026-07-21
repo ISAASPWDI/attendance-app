@@ -8,6 +8,7 @@
 - [Roles y seguridad](#roles-y-seguridad)
 - [Lógica de asistencia](#lógica-de-asistencia)
 - [Reportes (Excel y PDF)](#reportes-excel-y-pdf)
+- [Recordatorios de asistencia por correo](#recordatorios-de-asistencia-por-correo)
 - [Mantenimiento de la base de datos](#mantenimiento-de-la-base-de-datos)
 - [Entidades](#entidades)
 
@@ -40,6 +41,15 @@ JWT_SECRET=tu_clave_secreta_muy_larga
 CLOUDINARY_CLOUD_NAME=tu_cloud_name
 CLOUDINARY_API_KEY=tu_api_key
 CLOUDINARY_API_SECRET=tu_api_secret
+
+# EmailJS (una sola plantilla genérica para verificación, reset y recordatorios de asistencia)
+EMAILJS_SERVICE_ID=tu_service_id
+EMAILJS_TEMPLATE_ID=tu_template_id
+EMAILJS_PUBLIC_KEY=tu_public_key
+EMAILJS_PRIVATE_KEY=tu_private_key
+
+# URL del frontend (se usa como link dentro de los correos de recordatorio)
+FRONTEND_URL=http://localhost:4200
 ```
 
 ---
@@ -114,27 +124,30 @@ POST /api/users/{userId}/photo        — multipart/form-data, campo "file"
 |--------|------|-------------|
 | `GET`  | `/api/attendances/today` | Registro de hoy del docente autenticado (204 si no hay) |
 | `POST` | `/api/attendances` | Check-in manual con tiempo y estado personalizados |
-| `POST` | `/api/attendances/quick-checkin` | Check-in rápido a la hora actual |
-| `POST` | `/api/attendances/quick-checkout` | Check-out rápido a la hora actual (solo después de 13:00) |
+| `POST` | `/api/attendances/quick-checkin` | Check-in rápido a la hora actual (solo entre 7:30 am y 9:00 am) |
+| `POST` | `/api/attendances/quick-checkout` | Check-out rápido a la hora actual (solo entre 1:00 pm y 2:00 pm) |
 | `PATCH`| `/api/attendances/{id}` | Actualización parcial de un registro |
+| `GET`  | `/api/attendances/me` | Historial paginado y filtrable de las **propias** asistencias (docente o director) |
 
 **Body para POST /api/attendances:**
 ```json
 {
   "date": "2026-05-28",
   "timeIn": "07:30:00",
-  "timeOut": "13:00:00",
+  "timeOut": "13:15:00",
   "status": "Present",
   "notes": "Nota opcional"
 }
 ```
-> `timeOut` y `notes` son opcionales. `status` acepta: `Present`, `Late`, `Absent`.
+> `timeOut` y `notes` son opcionales. `status` acepta: `Present`, `Late`, `Absent`. `timeIn` debe estar entre las 7:30 am y las 9:00 am (`400` si no). Si se envía `timeOut`, debe estar entre la 1:00 pm y las 2:00 pm (`400` si no); estas mismas validaciones aplican también a `PATCH /api/attendances/{id}` cuando se modifica `timeIn`/`timeOut`.
 
-**Quick Check-In:** registra la hora actual del servidor. El estado se calcula automáticamente:
-- Si la hora de entrada es ≤ 07:30 → `Present`
-- Si es después de 07:30 → `Late`
+**Quick Check-In:** registra la hora actual del servidor. Solo habilitado entre las 7:30 am y las 9:00 am (fuera de ese rango, `400` — el registro de entrada queda cerrado por el resto del día). El estado se calcula automáticamente:
+- Si la hora de entrada es ≤ 08:20 → `Present`
+- Si es después de 08:20 (hasta las 9:00 am) → `Late`
 
-**Quick Check-Out:** solo permitido después de las 13:00 (hora del servidor). Si se intenta antes, devuelve 400.
+**Quick Check-Out:** solo permitido entre la 1:00 pm y las 2:00 pm (hora del servidor; 1:30 pm es la hora objetivo — de 1:00 a 1:32 se considera a tiempo, de 1:32 a 2:00 es tolerancia — y a las 2:00 pm cierra por completo). Fuera de esa ventana, devuelve `400`. La salida nunca afecta el `status` del día (que depende solo de la entrada); si nunca se registra, el frontend simplemente indica "No registró salida".
+
+**GET /api/attendances/me:** acepta los mismos parámetros de filtro que la vista DIRECTOR (`status`, `fromDate`, `toDate`, `dayOfWeek`, `sortBy` — solo `date`/`status`, no `teacherName` — `order`, `page`, `size`) pero siempre restringido al usuario autenticado; devuelve `AttendanceRecordResponseDTO` (sin nombre de docente, ya que es siempre el propio).
 
 ---
 
@@ -153,6 +166,7 @@ POST /api/users/{userId}/photo        — multipart/form-data, campo "file"
 | `status` | string | `Present`, `Late` o `Absent` |
 | `fromDate` | date | Fecha desde (ISO: `2026-01-01`) |
 | `toDate` | date | Fecha hasta (ISO: `2026-01-31`) |
+| `dayOfWeek` | string | `MONDAY`, `TUESDAY`, `WEDNESDAY`, `THURSDAY`, `FRIDAY`, `SATURDAY`, `SUNDAY` — filtra por día de la semana (derivado de `date`, no requiere una columna nueva) |
 | `sortBy` | string | `date` (default), `teacherName`, `status` |
 | `order` | string | `asc` o `desc` (default: `desc`) |
 | `page` | int | Número de página (0-based) |
@@ -160,7 +174,7 @@ POST /api/users/{userId}/photo        — multipart/form-data, campo "file"
 
 **Ejemplo:**
 ```
-GET /api/attendances?teacherName=garcia&status=Late&fromDate=2026-05-01&sortBy=date&order=desc&page=0&size=10
+GET /api/attendances?teacherName=garcia&status=Late&fromDate=2026-05-01&dayOfWeek=MONDAY&sortBy=date&order=desc&page=0&size=10
 ```
 
 **Response item:**
@@ -170,8 +184,9 @@ GET /api/attendances?teacherName=garcia&status=Late&fromDate=2026-05-01&sortBy=d
   "teacherId": 3,
   "teacherName": "Maria Garcia",
   "date": "2026-05-28",
+  "dayOfWeek": "Jueves",
   "timeIn": "08:05:00",
-  "timeOut": "13:00:00",
+  "timeOut": "13:15:00",
   "status": "Late",
   "notes": "Tráfico"
 }
@@ -194,7 +209,7 @@ GET /api/attendances?teacherName=garcia&status=Late&fromDate=2026-05-01&sortBy=d
   "absentToday": 5
 }
 ```
-> `absentToday` = total de docentes con rol TEACHER − (presentToday + lateToday)
+> `absentToday` = total de docentes con rol TEACHER − (presentToday + lateToday). **Sábado y domingo el resumen completo devuelve todo en 0** (no se registra asistencia esos días, así que no tiene sentido calcular ausentes).
 
 ---
 
@@ -208,14 +223,32 @@ Aceptan los mismos parámetros de filtro que `GET /api/attendances`.
 | `GET` | `/api/reports/pdf` | `application/pdf` |
 
 **Columnas del reporte:**
-`Docente | Rol | Fecha | Entrada | Salida | Estado | Notas | Foto | Firma | Huella`
+`Docente | Rol | Fecha | Día | Entrada | Salida | Estado | Notas | Foto | Firma`
 
-Foto, Firma y Huella se descargan desde Cloudinary y se **embeben como imágenes reales** en la celda (no como texto/URL). Si una imagen falta o no se puede descargar, la celda queda en blanco sin romper el resto del reporte. Por defecto, los registros se ordenan del más reciente al más antiguo (`order=desc`).
+`Día` es el día de la semana (Lunes..Domingo) derivado de `Fecha`. `Fecha` se formatea `dd/MM/yyyy`, `Entrada`/`Salida` solo muestran hora y minuto (`HH:mm`), y `Estado` se muestra en español (`Presente`/`Tarde`/`Ausente`). Foto y Firma se descargan desde Cloudinary y se **embeben como imágenes reales** en la celda (no como texto/URL). Si una imagen falta o no se puede descargar, la celda queda en blanco sin romper el resto del reporte. Por defecto, los registros se ordenan del más reciente al más antiguo (`order=desc`).
 
 **Ejemplo de descarga con filtro de fecha:**
 ```
 GET /api/reports/excel?fromDate=2026-05-28&toDate=2026-05-28
 ```
+
+---
+
+### Recordatorios de asistencia por correo
+
+`AttendanceReminderService` (`service/reminders/`) corre cada 25 minutos (`@Scheduled(fixedRate = ...)`, requiere `@EnableScheduling` en `AttendanceApplication`) y, si es de lunes a viernes y la hora actual cae dentro de una de las dos ventanas de registro, envía un correo a cada usuario (docente o director, cualquiera con `email` no vacío) que todavía no haya marcado esa acción hoy:
+
+- **Ventana de entrada** (7:30 am–9:00 am): envía a quien **no tiene ningún registro hoy**.
+- **Ventana de salida** (1:00 pm–2:00 pm): envía a quien tiene registro hoy pero **`timeOut` sigue `null`**.
+
+Es idempotente sin necesidad de una tabla de "ya enviado": en cada corrida vuelve a consultar el registro real de asistencia, así que en cuanto el usuario marca, la siguiente corrida ya no le envía nada. Fuera de ambas ventanas (o en fin de semana) el método no hace nada.
+
+`EmailService.sendAttendanceReminder(...)` arma el `subject` y el HTML completo del correo en Java y los manda con la **misma plantilla genérica de EmailJS** (`EMAILJS_TEMPLATE_ID`) que ya usan `sendVerificationCode`/`sendPasswordResetCode` — no hace falta una plantilla separada. Esa plantilla en el panel de EmailJS solo necesita:
+- **To Email** puesto a `{{to_email}}` (no un correo fijo).
+- **Subject** puesto a `{{subject}}`.
+- **Content** puesto a `{{message}}` (el HTML ya viene armado desde Java, EmailJS solo lo inyecta tal cual).
+
+> **Cuota de EmailJS:** el plan gratuito tiene un límite mensual de correos (revisa tu cuota en el dashboard de EmailJS). Con 13 usuarios y hasta ~4 corridas en la ventana de entrada + ~3 en la de salida por día, el peor caso teórico (nadie marca nunca) puede superar cuotas bajas — en la práctica baja mucho porque cada usuario deja de recibir correos apenas marca su asistencia, pero conviene monitorear el uso durante las primeras semanas.
 
 ---
 
@@ -248,13 +281,20 @@ Authorization: Bearer eyJ...
 
 ## Lógica de asistencia
 
+**Entrada** — ventana de **7:30 am a 9:00 am**; fuera de ese rango no se puede registrar entrada en absoluto (`400`), y el docente queda sin registro del día (cuenta como ausente):
+
 | Condición | Estado |
 |-----------|--------|
-| `timeIn` ≤ 07:30 | `Present` |
-| `timeIn` > 07:30 | `Late` |
+| `timeIn` < 07:30 o > 09:00 | No se puede registrar (`400`) |
+| `timeIn` ≤ 08:20 | `Present` |
+| `timeIn` entre 08:20 y 09:00 | `Late` |
 | Sin registro en el día | Cuenta como ausente en el dashboard |
 
+**Salida** — ventana de **1:00 pm a 2:00 pm**; fuera de ese rango no se puede registrar salida (`400`). Dentro de la ventana, de 1:00 a 1:32 pm se considera a tiempo y de 1:32 a 2:00 pm es tolerancia — ninguna de las dos cambia el `status` del día, que depende únicamente de la entrada. Si nunca se registra, no cambia el estado — se muestra como "No registró salida".
+
 Un docente solo puede tener **un registro por día**. Si intenta crear un segundo, recibe `409 Conflict`.
+
+El **día de la semana** (Lunes..Domingo) es un campo derivado de `date` — no se persiste, se calcula al vuelo para las respuestas de la API, el filtro `dayOfWeek` y la columna `Día` de los reportes.
 
 ---
 
@@ -262,10 +302,10 @@ Un docente solo puede tener **un registro por día**. Si intenta crear un segund
 
 Los reportes incluyen, tanto de docentes como del director:
 - Nombre completo y rol (Docente / Director)
-- Fecha, hora de entrada, hora de salida
+- Fecha y día de la semana, hora de entrada, hora de salida
 - Estado (`Present` / `Late` / `Absent`)
 - Notas
-- Foto de perfil, firma y huella digital, **embebidas como imágenes** dentro de la celda (no URLs) — orden por defecto: más recientes primero.
+- Foto de perfil y firma, **embebidas como imágenes** dentro de la celda (no URLs) — orden por defecto: más recientes primero.
 
 Los reportes se generan al vuelo con los mismos filtros de la vista del director. No hay caché de reportes — cada descarga consulta la DB en el momento, pero las imágenes de un mismo usuario se descargan una sola vez por reporte y se reutilizan en todas sus filas.
 

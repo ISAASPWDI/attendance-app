@@ -9,10 +9,13 @@ import com.attendance.demo.entity.AttendanceRecord;
 import com.attendance.demo.entity.User;
 import com.attendance.demo.exception.attendances.RecordAlreadyExistsException;
 import com.attendance.demo.exception.attendances.RecordNotFoundException;
+import com.attendance.demo.exception.attendances.RecordTimeInWindowException;
+import com.attendance.demo.exception.attendances.RecordTimeOutWindowException;
 import com.attendance.demo.exception.users.UserNotFoundException;
 import com.attendance.demo.repository.AttendanceRepository;
 import com.attendance.demo.repository.UserRepository;
 import com.attendance.demo.specification.AttendanceSpecification;
+import com.attendance.demo.util.DayOfWeekEs;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -20,14 +23,20 @@ import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.LocalTime;
 
 @Service
 public class AttendanceRecordService {
 
-    private static final LocalTime CHECK_IN_CUTOFF = LocalTime.of(7, 30);
-    private static final LocalTime CHECK_OUT_MIN   = LocalTime.of(13, 0);
+    /** Entry window: 7:30-8:20 = Present, 8:20-9:00 = Late, outside 7:30-9:00 = closed. */
+    private static final LocalTime ENTRY_WINDOW_START = LocalTime.of(7, 30);
+    private static final LocalTime ENTRY_LATE_CUTOFF  = LocalTime.of(8, 20);
+    private static final LocalTime ENTRY_WINDOW_END   = LocalTime.of(9, 0);
+    /** Exit window: 1:00-2:00 pm, open the whole time (1:32 pm is only an informational on-time/late split, not a close). */
+    private static final LocalTime EXIT_WINDOW_START  = LocalTime.of(13, 0);
+    private static final LocalTime EXIT_WINDOW_END    = LocalTime.of(14, 0);
 
     @Autowired
     private AttendanceRepository attendanceRepository;
@@ -43,6 +52,9 @@ public class AttendanceRecordService {
         if (attendanceRepository.findByUserIdAndDate(userId, dto.getDate()).isPresent()) {
             throw new RecordAlreadyExistsException(dto.getDate());
         }
+        validateTimeIn(dto.getTimeIn());
+        validateTimeOut(dto.getTimeOut());
+
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new UserNotFoundException(userId));
 
@@ -57,18 +69,22 @@ public class AttendanceRecordService {
         return toDTO(attendanceRepository.save(r));
     }
 
-    /** Quick check-in at current time; status auto-calculated vs 7:30 cutoff. */
+    /** Quick check-in at current time; only allowed between 7:30 and 9:00 am. Status auto-calculated vs 8:20 cutoff. */
     @Transactional
     public AttendanceRecordResponseDTO quickCheckIn(Long userId) {
         LocalDate today = LocalDate.now();
         if (attendanceRepository.findByUserIdAndDate(userId, today).isPresent()) {
             throw new RecordAlreadyExistsException(today);
         }
+        LocalTime now = LocalTime.now();
+        if (now.isBefore(ENTRY_WINDOW_START) || now.isAfter(ENTRY_WINDOW_END)) {
+            throw new IllegalStateException("La entrada rápida solo está habilitada de 7:30 am a 9:00 am");
+        }
+
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new UserNotFoundException(userId));
 
-        LocalTime now = LocalTime.now();
-        AttendanceRecord.Status status = now.isAfter(CHECK_IN_CUTOFF)
+        AttendanceRecord.Status status = now.isAfter(ENTRY_LATE_CUTOFF)
                 ? AttendanceRecord.Status.Late
                 : AttendanceRecord.Status.Present;
 
@@ -81,12 +97,12 @@ public class AttendanceRecordService {
         return toDTO(attendanceRepository.save(r));
     }
 
-    /** Quick check-out at current time. Only allowed after 13:00. */
+    /** Quick check-out at current time. Only allowed between 1:00 pm and 2:00 pm. */
     @Transactional
     public AttendanceRecordResponseDTO quickCheckOut(Long userId) {
         LocalTime now = LocalTime.now();
-        if (now.isBefore(CHECK_OUT_MIN)) {
-            throw new IllegalStateException("La salida rápida solo está habilitada después de la 1:00 PM");
+        if (now.isBefore(EXIT_WINDOW_START) || now.isAfter(EXIT_WINDOW_END)) {
+            throw new IllegalStateException("La salida rápida solo está habilitada de 1:00 pm a 2:00 pm");
         }
         AttendanceRecord r = attendanceRepository
                 .findByUserIdAndDate(userId, LocalDate.now())
@@ -112,12 +128,38 @@ public class AttendanceRecordService {
                 .orElseThrow(() -> new RecordNotFoundException(recordId));
 
         if (dto.getDate() != null)   r.setDate(dto.getDate());
-        if (dto.getTimeIn() != null) r.setTimeIn(dto.getTimeIn());
-        if (dto.getTimeOut() != null) r.setTimeOut(dto.getTimeOut());
+        if (dto.getTimeIn() != null) {
+            validateTimeIn(dto.getTimeIn());
+            r.setTimeIn(dto.getTimeIn());
+        }
+        if (dto.getTimeOut() != null) {
+            validateTimeOut(dto.getTimeOut());
+            r.setTimeOut(dto.getTimeOut());
+        }
         if (dto.getStatus() != null) r.setStatus(AttendanceRecord.Status.valueOf(dto.getStatus()));
         if (dto.getNotes() != null)  r.setNotes(dto.getNotes());
 
         return toDTO(attendanceRepository.save(r));
+    }
+
+    private void validateTimeIn(LocalTime timeIn) {
+        if (timeIn != null && (timeIn.isBefore(ENTRY_WINDOW_START) || timeIn.isAfter(ENTRY_WINDOW_END))) {
+            throw new RecordTimeInWindowException(timeIn);
+        }
+    }
+
+    private void validateTimeOut(LocalTime timeOut) {
+        if (timeOut != null && (timeOut.isBefore(EXIT_WINDOW_START) || timeOut.isAfter(EXIT_WINDOW_END))) {
+            throw new RecordTimeOutWindowException(timeOut);
+        }
+    }
+
+    /** Paginated attendance history for the authenticated user's own records (teacher or director). */
+    @Transactional(readOnly = true)
+    public Page<AttendanceRecordResponseDTO> getMyAttendancePage(Long userId, AttendanceFilter filter, Pageable pageable) {
+        Specification<AttendanceRecord> spec = AttendanceSpecification.filter(filter)
+                .and(AttendanceSpecification.forUser(userId));
+        return attendanceRepository.findAll(spec, pageable).map(this::toDTO);
     }
 
     // ── DIRECTOR endpoints ────────────────────────────────────────────────────
@@ -137,10 +179,15 @@ public class AttendanceRecordService {
         return count;
     }
 
-    /** Dashboard summary: totals and today's attendance stats. */
+    /** Dashboard summary: totals and today's attendance stats. Weekends always report all-zero — attendance isn't tracked Sat/Sun. */
     @Transactional(readOnly = true)
     public DashboardSummaryDTO getDashboardSummary() {
         LocalDate today = LocalDate.now();
+        DayOfWeek dow = today.getDayOfWeek();
+        if (dow == DayOfWeek.SATURDAY || dow == DayOfWeek.SUNDAY) {
+            return new DashboardSummaryDTO(0, 0, 0, 0);
+        }
+
         long totalRecords  = attendanceRepository.count();
         long presentToday  = attendanceRepository.countByStatusAndDate(AttendanceRecord.Status.Present, today);
         long lateToday     = attendanceRepository.countByStatusAndDate(AttendanceRecord.Status.Late, today);
@@ -156,6 +203,7 @@ public class AttendanceRecordService {
         AttendanceRecordResponseDTO dto = new AttendanceRecordResponseDTO();
         dto.setId(r.getId());
         dto.setDate(r.getDate());
+        dto.setDayOfWeek(DayOfWeekEs.label(r.getDate()));
         dto.setTimeIn(r.getTimeIn());
         dto.setTimeOut(r.getTimeOut());
         dto.setStatus(r.getStatus().name());
@@ -169,6 +217,7 @@ public class AttendanceRecordService {
                 r.getUser().getId(),
                 r.getUser().getFullName(),
                 r.getDate(),
+                DayOfWeekEs.label(r.getDate()),
                 r.getTimeIn(),
                 r.getTimeOut(),
                 r.getStatus().name(),

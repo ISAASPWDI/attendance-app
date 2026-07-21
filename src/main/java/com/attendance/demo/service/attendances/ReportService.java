@@ -5,6 +5,7 @@ import com.attendance.demo.entity.AttendanceRecord;
 import com.attendance.demo.entity.User;
 import com.attendance.demo.repository.AttendanceRepository;
 import com.attendance.demo.specification.AttendanceSpecification;
+import com.attendance.demo.util.DayOfWeekEs;
 import com.lowagie.text.Document;
 import com.lowagie.text.DocumentException;
 import com.lowagie.text.Element;
@@ -39,6 +40,7 @@ import java.io.InputStream;
 import java.net.HttpURLConnection;
 import java.net.URI;
 import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -47,8 +49,11 @@ import java.util.Map;
 public class ReportService {
 
     private static final String[] HEADERS = {
-            "Docente", "Rol", "Fecha", "Entrada", "Salida", "Estado", "Notas", "Foto", "Firma", "Huella"
+            "Docente", "Rol", "Fecha", "Día", "Entrada", "Salida", "Estado", "Notas", "Foto", "Firma"
     };
+
+    private static final DateTimeFormatter DATE_FORMAT = DateTimeFormatter.ofPattern("dd/MM/yyyy");
+    private static final DateTimeFormatter TIME_FORMAT = DateTimeFormatter.ofPattern("HH:mm");
 
     @Autowired
     private AttendanceRepository attendanceRepository;
@@ -86,23 +91,23 @@ public class ReportService {
 
                 row.createCell(0).setCellValue(user.getFullName());
                 row.createCell(1).setCellValue(roleLabel(user.getRole()));
-                row.createCell(2).setCellValue(r.getDate().toString());
-                row.createCell(3).setCellValue(r.getTimeIn() != null ? r.getTimeIn().toString() : "");
-                row.createCell(4).setCellValue(r.getTimeOut() != null ? r.getTimeOut().toString() : "No registrada");
-                row.createCell(5).setCellValue(r.getStatus().name());
-                row.createCell(6).setCellValue(r.getNotes() != null ? r.getNotes() : "");
+                row.createCell(2).setCellValue(r.getDate().format(DATE_FORMAT));
+                row.createCell(3).setCellValue(DayOfWeekEs.label(r.getDate()));
+                row.createCell(4).setCellValue(r.getTimeIn() != null ? r.getTimeIn().format(TIME_FORMAT) : "");
+                row.createCell(5).setCellValue(r.getTimeOut() != null ? r.getTimeOut().format(TIME_FORMAT) : "No registrada");
+                row.createCell(6).setCellValue(statusLabel(r.getStatus()));
+                row.createCell(7).setCellValue(r.getNotes() != null ? r.getNotes() : "");
 
-                embedExcelImage(workbook, drawing, sheet, imageCache, user.getPhotoUrl(), 7, rowNum);
-                embedExcelImage(workbook, drawing, sheet, imageCache, user.getSignatureUrl(), 8, rowNum);
-                embedExcelImage(workbook, drawing, sheet, imageCache, user.getFingerprintUrl(), 9, rowNum);
+                embedExcelImage(workbook, drawing, sheet, imageCache, user.getPhotoUrl(), 8, rowNum);
+                embedExcelImage(workbook, drawing, sheet, imageCache, user.getSignatureUrl(), 9, rowNum);
 
                 rowNum++;
             }
 
-            for (int i = 0; i < 7; i++) {
+            for (int i = 0; i < 8; i++) {
                 sheet.autoSizeColumn(i);
             }
-            for (int i = 7; i < HEADERS.length; i++) {
+            for (int i = 8; i < HEADERS.length; i++) {
                 sheet.setColumnWidth(i, 12 * 256);
             }
 
@@ -142,14 +147,14 @@ public class ReportService {
         doc.add(title);
 
         Font subFont = FontFactory.getFont(FontFactory.HELVETICA, 10, new Color(100, 100, 100));
-        Paragraph sub = new Paragraph("Generado el: " + LocalDate.now(), subFont);
+        Paragraph sub = new Paragraph("Generado el: " + LocalDate.now().format(DATE_FORMAT), subFont);
         sub.setAlignment(Element.ALIGN_CENTER);
         sub.setSpacingAfter(18);
         doc.add(sub);
 
         PdfPTable table = new PdfPTable(HEADERS.length);
         table.setWidthPercentage(100);
-        table.setWidths(new float[]{2.3f, 1f, 1.2f, 1f, 1f, 1f, 1.8f, 1f, 1f, 1f});
+        table.setWidths(new float[]{2.3f, 1f, 1.2f, 1f, 1f, 1f, 1f, 1.8f, 1f, 1f});
 
         Font hFont = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 10, Color.WHITE);
         for (String h : HEADERS) {
@@ -169,15 +174,15 @@ public class ReportService {
 
             addCell(table, user.getFullName(), rFont, bg);
             addCell(table, roleLabel(user.getRole()), rFont, bg);
-            addCell(table, r.getDate().toString(), rFont, bg);
-            addCell(table, r.getTimeIn() != null ? r.getTimeIn().toString() : "-", rFont, bg);
-            addCell(table, r.getTimeOut() != null ? r.getTimeOut().toString() : "No registrada", rFont, bg);
-            addCell(table, r.getStatus().name(), rFont, bg);
+            addCell(table, r.getDate().format(DATE_FORMAT), rFont, bg);
+            addCell(table, DayOfWeekEs.label(r.getDate()), rFont, bg);
+            addCell(table, r.getTimeIn() != null ? r.getTimeIn().format(TIME_FORMAT) : "-", rFont, bg);
+            addCell(table, r.getTimeOut() != null ? r.getTimeOut().format(TIME_FORMAT) : "No registrada", rFont, bg);
+            addCell(table, statusLabel(r.getStatus()), rFont, bg);
             addCell(table, r.getNotes() != null ? r.getNotes() : "-", rFont, bg);
 
             addImageCell(table, fetchImageBytes(user.getPhotoUrl(), imageCache), bg);
             addImageCell(table, fetchImageBytes(user.getSignatureUrl(), imageCache), bg);
-            addImageCell(table, fetchImageBytes(user.getFingerprintUrl(), imageCache), bg);
         }
 
         doc.add(table);
@@ -220,6 +225,14 @@ public class ReportService {
 
     private String roleLabel(User.Role role) {
         return role == User.Role.DIRECTOR ? "Director" : "Docente";
+    }
+
+    private String statusLabel(AttendanceRecord.Status status) {
+        return switch (status) {
+            case Present -> "Presente";
+            case Late -> "Tarde";
+            case Absent -> "Ausente";
+        };
     }
 
     /** Downloads an image once per unique URL per report, caching bytes for reuse across rows. */

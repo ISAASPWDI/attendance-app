@@ -69,6 +69,15 @@ public class AttendanceRecordController {
         return ResponseEntity.ok(attendanceRecordService.patch(id, dto, userDetails.user.getId()));
     }
 
+    /** Paginated attendance history for the authenticated user's own records (teacher or director). */
+    @GetMapping("/me")
+    public ResponseEntity<Page<AttendanceRecordResponseDTO>> getMyAttendances(
+            AttendanceFilter filter,
+            Pageable pageable,
+            @AuthenticationPrincipal CustomUserDetails userDetails) {
+        return ResponseEntity.ok(attendanceRecordService.getMyAttendancePage(userDetails.user.getId(), filter, pageable));
+    }
+
     // ── DIRECTOR ─────────────────────────────────────────────────────────────
 
     /** Paginated attendance list with filters. DIRECTOR only. */

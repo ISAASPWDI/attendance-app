@@ -27,6 +27,9 @@ public class EmailService {
     @Value("${app.emailjs.private-key:}")
     private String privateKey;
 
+    @Value("${app.frontend-url:}")
+    private String frontendUrl;
+
     public void sendVerificationCode(String to, String code) {
         String subject = "Verifica tu correo - Attendance App";
         String body = """
@@ -49,7 +52,26 @@ public class EmailService {
         send(to, subject, body);
     }
 
-    private void send(String to, String subject, String htmlBody) {
+    public void sendAttendanceReminder(String to, String toName, String actionLabel, String windowLabel, String dateLabel) {
+        String subject = "Recordatorio de " + actionLabel + " - Attendance App";
+        String body = """
+                <p>Hola %s,</p>
+                <p>Aún no registras tu <strong>%s</strong> de hoy, %s.</p>
+                <p>La ventana para registrarla es <strong>%s</strong>.</p>
+                <p style="text-align:center;margin-top:20px;">
+                  <a href="%s" style="display:inline-block;background:#dc2626;color:#fff;padding:10px 20px;border-radius:6px;text-decoration:none;">
+                    Ir a Attendance App
+                  </a>
+                </p>
+                """.formatted(toName, actionLabel, dateLabel, windowLabel, frontendUrl);
+        send(to, subject, body);
+    }
+
+    private void send(String to, String subject, String message) {
+        send(templateId, to, Map.of("to_email", to, "subject", subject, "message", message));
+    }
+
+    private void send(String templateId, String to, Map<String, Object> templateParams) {
         if (to == null || to.isBlank()) {
             throw new EmailSendException("No hay una dirección de correo destino", null);
         }
@@ -58,11 +80,7 @@ public class EmailService {
                 "template_id", templateId,
                 "user_id", publicKey,
                 "accessToken", privateKey,
-                "template_params", Map.of(
-                        "to_email", to,
-                        "subject", subject,
-                        "message", htmlBody
-                )
+                "template_params", templateParams
         );
         try {
             restClient.post()

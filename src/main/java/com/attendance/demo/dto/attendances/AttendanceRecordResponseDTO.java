@@ -26,6 +26,9 @@ public class AttendanceRecordResponseDTO {
     private LocalDate date;
 
     @NotNull
+    private String dayOfWeek;
+
+    @NotNull
     private LocalTime timeIn;
 
     @Null

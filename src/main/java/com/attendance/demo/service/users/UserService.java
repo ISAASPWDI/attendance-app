@@ -8,6 +8,7 @@ import com.attendance.demo.entity.User;
 import com.attendance.demo.exception.users.UserNotFoundException;
 import com.attendance.demo.repository.UserRepository;
 import com.attendance.demo.specification.UserSpecification;
+import com.attendance.demo.util.DayOfWeekEs;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -87,6 +88,7 @@ public class UserService {
                 .map(r -> new AttendanceRecordResponseDTO(
                         r.getId(),
                         r.getDate(),
+                        DayOfWeekEs.label(r.getDate()),
                         r.getTimeIn(),
                         r.getTimeOut(),
                         r.getStatus().name(),

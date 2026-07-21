@@ -12,6 +12,8 @@ public class AttendanceFilter {
     private String status;
     private LocalDate fromDate;
     private LocalDate toDate;
+    /** MONDAY | TUESDAY | WEDNESDAY | THURSDAY | FRIDAY | SATURDAY | SUNDAY */
+    private String dayOfWeek;
     /** date | teacherName | status */
     private String sortBy;
     /** asc | desc (default: desc) */
