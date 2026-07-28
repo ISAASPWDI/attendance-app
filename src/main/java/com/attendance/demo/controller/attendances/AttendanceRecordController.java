@@ -89,6 +89,16 @@ public class AttendanceRecordController {
         return ResponseEntity.ok(attendanceRecordService.getAttendancePage(filter, pageable));
     }
 
+    /** Director backfills a missed check-in/out for another teacher, bypassing the time-window rules. */
+    @PostMapping("/for-user/{userId}")
+    @PreAuthorize("hasAuthority('DIRECTOR')")
+    public ResponseEntity<AttendanceRecordResponseDTO> createForUser(
+            @PathVariable Long userId,
+            @RequestBody AttendanceRecordDTO dto) {
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(attendanceRecordService.createForUser(userId, dto));
+    }
+
     /**
      * Delete all records for a specific date (use before generating the daily report
      * to keep the free DB plan under the 512 MB limit). DIRECTOR only.

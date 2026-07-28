@@ -101,12 +101,12 @@ public class AuthService {
     }
 
     public LoginResponseDTO verify(LoginUserDTO loginInfo) {
-        authenticationManager.authenticate(
-                new UsernamePasswordAuthenticationToken(loginInfo.getUsername(), loginInfo.getPassword())
-        );
-
-        User user = userRepository.findByUsername(loginInfo.getUsername())
+        User user = userRepository.findByUsernameOrEmail(loginInfo.getUsername(), loginInfo.getUsername())
                 .orElseThrow(() -> new UserNotFoundException(loginInfo.username));
+
+        authenticationManager.authenticate(
+                new UsernamePasswordAuthenticationToken(user.getUsername(), loginInfo.getPassword())
+        );
 
         return new LoginResponseDTO(
                 "Login exitoso!",
@@ -159,14 +159,14 @@ public class AuthService {
     public void forgotPassword(String username) {
         // Always succeeds regardless of whether the username exists (or has an email on file),
         // to avoid leaking registered accounts.
-        userRepository.findByUsername(username)
+        userRepository.findByUsernameOrEmail(username, username)
                 .filter(user -> user.getEmail() != null && !user.getEmail().isBlank())
                 .ifPresent(this::issuePasswordResetCode);
     }
 
     @Transactional
     public void resetPassword(String username, String code, String newPassword) {
-        User user = userRepository.findByUsername(username)
+        User user = userRepository.findByUsernameOrEmail(username, username)
                 .orElseThrow(InvalidVerificationCodeException::new);
 
         VerificationCode verificationCode = verificationCodeRepository

@@ -8,7 +8,7 @@
 - [Roles y seguridad](#roles-y-seguridad)
 - [Lógica de asistencia](#lógica-de-asistencia)
 - [Reportes (Excel y PDF)](#reportes-excel-y-pdf)
-- [Recordatorios de asistencia por correo](#recordatorios-de-asistencia-por-correo)
+- [Reportes mensuales, resumen diario y aviso de purga](#reportes-mensuales-resumen-diario-y-aviso-de-purga)
 - [Mantenimiento de la base de datos](#mantenimiento-de-la-base-de-datos)
 - [Entidades](#entidades)
 
@@ -42,13 +42,13 @@ CLOUDINARY_CLOUD_NAME=tu_cloud_name
 CLOUDINARY_API_KEY=tu_api_key
 CLOUDINARY_API_SECRET=tu_api_secret
 
-# EmailJS (una sola plantilla genérica para verificación, reset y recordatorios de asistencia)
+# EmailJS (una sola plantilla genérica para verificación, reset, reporte mensual y resumen diario)
 EMAILJS_SERVICE_ID=tu_service_id
 EMAILJS_TEMPLATE_ID=tu_template_id
 EMAILJS_PUBLIC_KEY=tu_public_key
 EMAILJS_PRIVATE_KEY=tu_private_key
 
-# URL del frontend (se usa como link dentro de los correos de recordatorio)
+# URL del frontend (se usa como link dentro de los correos)
 FRONTEND_URL=http://localhost:4200
 ```
 
@@ -87,6 +87,10 @@ POST /api/users/{userId}/photo        — multipart/form-data, campo "file"
 | `POST` | `/api/auth/register` | público | Registrar nuevo usuario |
 | `POST` | `/api/auth/login` | público | Login — devuelve JWT + datos del usuario |
 | `GET`  | `/api/auth/me` | autenticado | Perfil del usuario actual (nombre, rol, URL de foto) |
+| `POST` | `/api/auth/forgot-password` | público | Solicita un código de restablecimiento de contraseña |
+| `POST` | `/api/auth/reset-password` | público | Restablece la contraseña con el código recibido |
+
+> **`username` acepta usuario o correo:** el campo `username` de `login`, `forgot-password` y `reset-password` acepta tanto el nombre de usuario como el correo electrónico registrado — el backend resuelve el identificador contra ambos campos (`findByUsernameOrEmail`).
 
 **Login response:**
 ```json
@@ -156,7 +160,10 @@ POST /api/users/{userId}/photo        — multipart/form-data, campo "file"
 | Método | Ruta | Descripción |
 |--------|------|-------------|
 | `GET`    | `/api/attendances` | Lista paginada con filtros (solo DIRECTOR) |
+| `POST`   | `/api/attendances/for-user/{userId}` | Crea un registro para otro usuario (backfill), sin validar las ventanas de entrada/salida (solo DIRECTOR) |
 | `DELETE` | `/api/attendances/by-date/{date}` | Elimina todos los registros de una fecha (solo DIRECTOR) |
+
+**`POST /api/attendances/for-user/{userId}`:** pensado para cuando un docente tuvo una falla/interrupción y no pudo marcar dentro de su ventana — el director registra el mismo body que `POST /api/attendances` (`date`, `timeIn`, `timeOut`, `status`, `notes`) pero **sin** las validaciones de ventana horaria. Sigue respetando la regla de un registro por día por usuario (`409` si ya existe).
 
 **Parámetros de filtro para GET /api/attendances:**
 
@@ -199,8 +206,9 @@ GET /api/attendances?teacherName=garcia&status=Late&fromDate=2026-05-01&dayOfWee
 | Método | Ruta | Descripción |
 |--------|------|-------------|
 | `GET` | `/api/dashboard/summary` | Resumen del día actual |
+| `GET` | `/api/dashboard/purge-warning` | Aviso de purga próxima (últimos 7 días del mes) |
 
-**Response:**
+**Response de `/summary`:**
 ```json
 {
   "totalRecords": 348,
@@ -210,6 +218,12 @@ GET /api/attendances?teacherName=garcia&status=Late&fromDate=2026-05-01&dayOfWee
 }
 ```
 > `absentToday` = total de docentes con rol TEACHER − (presentToday + lateToday). **Sábado y domingo el resumen completo devuelve todo en 0** (no se registra asistencia esos días, así que no tiene sentido calcular ausentes).
+
+**Response de `/purge-warning`:**
+```json
+{ "active": true, "daysRemaining": 5, "purgeDate": "2026-07-31" }
+```
+> `active` es `true` cuando quedan 6 días o menos para el fin del mes calendario actual. Es un cálculo al vuelo (no persiste nada), pensado para que el frontend muestre un banner recordándole al director que verifique que todas las asistencias del mes estén registradas (usando `POST /api/attendances/for-user/{userId}` para completar las que falten) antes de que el job mensual las elimine.
 
 ---
 
@@ -234,21 +248,21 @@ GET /api/reports/excel?fromDate=2026-05-28&toDate=2026-05-28
 
 ---
 
-### Recordatorios de asistencia por correo
+### Reportes mensuales, resumen diario y aviso de purga
 
-`AttendanceReminderService` (`service/reminders/`) corre cada 25 minutos (`@Scheduled(fixedRate = ...)`, requiere `@EnableScheduling` en `AttendanceApplication`) y, si es de lunes a viernes y la hora actual cae dentro de una de las dos ventanas de registro, envía un correo a cada usuario (docente o director, cualquiera con `email` no vacío) que todavía no haya marcado esa acción hoy:
+> Los recordatorios de entrada/salida por correo (cada 25 min, a docentes y directores) fueron **eliminados**: consumían demasiada cuota del plan gratuito de EmailJS y ponían en riesgo el envío del reporte mensual a fin de mes. Ahora los únicos correos automáticos, además de verificación/reset, son estos dos, y van **solo a usuarios DIRECTOR**.
 
-- **Ventana de entrada** (7:30 am–9:00 am): envía a quien **no tiene ningún registro hoy**.
-- **Ventana de salida** (1:00 pm–2:00 pm): envía a quien tiene registro hoy pero **`timeOut` sigue `null`**.
+**Reporte mensual (`MonthlyReportService`, `service/reports/`):** corre el día 1 de cada mes a la 1:00 am (`@Scheduled(cron = "0 0 1 1 * *", zone = "America/Lima")`):
+1. Genera el Excel y PDF del mes calendario **anterior** completo (mismo filtro/columnas que `/api/reports`, incluye docentes y director).
+2. Sube ambos archivos a Cloudinary como recursos `raw` (carpeta `monthly-reports`) y guarda las URLs en la tabla `monthly_report_log` (una fila por mes).
+3. Envía un correo con ambos links de descarga a cada usuario DIRECTOR con correo registrado.
+4. **Solo si al menos un DIRECTOR recibió el correo**, elimina los registros de asistencia de ese mes (`DELETE` equivalente a `by-date` pero para todo el rango del mes).
 
-Es idempotente sin necesidad de una tabla de "ya enviado": en cada corrida vuelve a consultar el registro real de asistencia, así que en cuanto el usuario marca, la siguiente corrida ya no le envía nada. Fuera de ambas ventanas (o en fin de semana) el método no hace nada.
+Si el envío falla para todos los directores (ej. EmailJS caído), la fila queda marcada como no entregada y el propio job la reintenta al inicio del ciclo del mes siguiente (con las mismas URLs ya subidas, sin regenerar el reporte) antes de purgar — la purga de ese mes solo ocurre una vez que la entrega se confirma.
 
-`EmailService.sendAttendanceReminder(...)` arma el `subject` y el HTML completo del correo en Java y los manda con la **misma plantilla genérica de EmailJS** (`EMAILJS_TEMPLATE_ID`) que ya usan `sendVerificationCode`/`sendPasswordResetCode` — no hace falta una plantilla separada. Esa plantilla en el panel de EmailJS solo necesita:
-- **To Email** puesto a `{{to_email}}` (no un correo fijo).
-- **Subject** puesto a `{{subject}}`.
-- **Content** puesto a `{{message}}` (el HTML ya viene armado desde Java, EmailJS solo lo inyecta tal cual).
+**Resumen diario (`DailyDigestService`, `service/reports/`):** corre de lunes a viernes a las 2:30 pm (`@Scheduled(cron = "0 30 14 * * MON-FRI", zone = "America/Lima")`, justo después de que cierra la ventana de salida) y envía a cada DIRECTOR un correo con el total de asistencias del día y el desglose de presentes/tarde/ausentes por rol (docente y director).
 
-> **Cuota de EmailJS:** el plan gratuito tiene un límite mensual de correos (revisa tu cuota en el dashboard de EmailJS). Con 13 usuarios y hasta ~4 corridas en la ventana de entrada + ~3 en la de salida por día, el peor caso teórico (nadie marca nunca) puede superar cuotas bajas — en la práctica baja mucho porque cada usuario deja de recibir correos apenas marca su asistencia, pero conviene monitorear el uso durante las primeras semanas.
+Ambos usan la **misma plantilla genérica de EmailJS** (`EMAILJS_TEMPLATE_ID`) que `sendVerificationCode`/`sendPasswordResetCode` — el `subject` y el HTML se arman en Java, EmailJS solo los inyecta vía `{{to_email}}`/`{{subject}}`/`{{message}}`.
 
 ---
 
@@ -256,7 +270,7 @@ Es idempotente sin necesidad de una tabla de "ya enviado": en cada corrida vuelv
 
 | Método | Ruta | Descripción |
 |--------|------|-------------|
-| `GET`  | `/api/users` | Lista paginada de usuarios con sus registros |
+| `GET`  | `/api/users` | Lista paginada de usuarios con sus registros (filtros: `username`, `status`, `role` — `TEACHER`/`DIRECTOR`, `fromDate`, `toDate`) |
 | `GET`  | `/api/users/{id}` | Detalle de un usuario con todos sus registros |
 | `POST` | `/api/users/{id}/signature` | Subir imagen de firma (multipart) |
 | `POST` | `/api/users/{id}/fingerprint` | Subir imagen de huella (multipart) |
@@ -315,7 +329,9 @@ Los reportes se generan al vuelo con los mismos filtros de la vista del director
 
 El plan gratuito de PostgreSQL (ej. Neon, Supabase, Railway) tiene un límite de **512 MB**. Con asistencias de entrada y salida de lunes a viernes, los datos se acumulan rápido.
 
-### Flujo recomendado al final de cada día (o semana):
+Desde la introducción del reporte mensual automático (ver [arriba](#reportes-mensuales-resumen-diario-y-aviso-de-purga)), la limpieza **ya no depende de que el director la haga manualmente cada día** — el mes se archiva y se purga solo. El flujo manual sigue disponible para limpiezas puntuales fuera de ciclo:
+
+### Flujo manual (limpieza puntual):
 
 1. Descargar el reporte Excel o PDF del día:
    ```
@@ -359,4 +375,14 @@ timeIn   — LocalTime
 timeOut  — LocalTime (nullable)
 status   — Present | Late | Absent
 notes    — String (nullable)
+```
+
+### MonthlyReportLog
+```
+id          — Long (PK)
+period      — LocalDate, único (primer día del mes reportado)
+excelUrl    — String (URL Cloudinary, recurso raw)
+pdfUrl      — String (URL Cloudinary, recurso raw)
+generatedAt — LocalDateTime
+delivered   — boolean (true una vez que al menos un DIRECTOR recibió el correo; solo entonces se purga ese mes)
 ```

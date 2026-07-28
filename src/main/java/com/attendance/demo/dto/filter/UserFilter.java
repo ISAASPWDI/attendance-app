@@ -12,6 +12,7 @@ public class UserFilter {
 
     private String username;
     private String status;
+    private String role;
 
     private LocalDate fromDate;
     private LocalDate toDate;

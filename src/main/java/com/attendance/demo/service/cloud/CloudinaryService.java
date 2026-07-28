@@ -46,6 +46,27 @@ public class CloudinaryService {
         return (String) result.get("secure_url");
     }
 
+    /**
+     * Uploads an arbitrary file (e.g. xlsx/pdf) as a raw resource and returns its public URL.
+     *
+     * @param bytes     the file content
+     * @param folder    Cloudinary folder (e.g. "monthly-reports")
+     * @param publicId  stable public ID (e.g. "asistencias_2026-07")
+     */
+    @SuppressWarnings("unchecked")
+    public String uploadRaw(byte[] bytes, String folder, String publicId) throws IOException {
+        Map<String, Object> result = cloudinary.uploader().upload(
+                bytes,
+                ObjectUtils.asMap(
+                        "folder",       folder,
+                        "public_id",    publicId,
+                        "resource_type", "raw",
+                        "overwrite",    true
+                )
+        );
+        return (String) result.get("secure_url");
+    }
+
     /** Deletes an image by its full public ID (folder/publicId). */
     public void deleteImage(String fullPublicId) throws Exception {
         cloudinary.uploader().destroy(fullPublicId, ObjectUtils.emptyMap());

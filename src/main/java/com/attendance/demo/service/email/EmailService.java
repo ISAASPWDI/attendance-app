@@ -52,18 +52,57 @@ public class EmailService {
         send(to, subject, body);
     }
 
-    public void sendAttendanceReminder(String to, String toName, String actionLabel, String windowLabel, String dateLabel) {
-        String subject = "Recordatorio de " + actionLabel + " - Attendance App";
+    public void sendMonthlyReportReady(String to, String toName, String monthLabel, String excelUrl, String pdfUrl) {
+        String subject = "Reporte mensual de asistencias (" + monthLabel + ") - Attendance App";
         String body = """
                 <p>Hola %s,</p>
-                <p>Aún no registras tu <strong>%s</strong> de hoy, %s.</p>
-                <p>La ventana para registrarla es <strong>%s</strong>.</p>
+                <p>El reporte de asistencias de <strong>%s</strong> ya está disponible.</p>
                 <p style="text-align:center;margin-top:20px;">
-                  <a href="%s" style="display:inline-block;background:#dc2626;color:#fff;padding:10px 20px;border-radius:6px;text-decoration:none;">
-                    Ir a Attendance App
+                  <a href="%s" style="display:inline-block;background:#dc2626;color:#fff;padding:10px 20px;border-radius:6px;text-decoration:none;margin-right:10px;">
+                    Descargar Excel
+                  </a>
+                  <a href="%s" style="display:inline-block;background:#374151;color:#fff;padding:10px 20px;border-radius:6px;text-decoration:none;">
+                    Descargar PDF
                   </a>
                 </p>
-                """.formatted(toName, actionLabel, dateLabel, windowLabel, frontendUrl);
+                <p style="margin-top:16px;color:#6b7280;font-size:13px;">
+                  Nota: los registros de asistencia de %s serán eliminados de la base de datos tras el envío de este correo, para mantener el uso de almacenamiento bajo control.
+                </p>
+                """.formatted(toName, monthLabel, excelUrl, pdfUrl, monthLabel);
+        send(to, subject, body);
+    }
+
+    public void sendDailyDigest(String to, String toName, String dateLabel,
+                                 long totalToday,
+                                 long presentTeacher, long lateTeacher, long absentTeacher,
+                                 long presentDirector, long lateDirector, long absentDirector) {
+        String subject = "Resumen de asistencias del " + dateLabel + " - Attendance App";
+        String body = """
+                <p>Hola %s,</p>
+                <p>Resumen de asistencias de hoy, %s (total registros: %d):</p>
+                <table style="border-collapse:collapse;width:100%%;margin-top:10px;">
+                  <tr style="background:#374151;color:#fff;">
+                    <th style="padding:8px;text-align:left;">Rol</th>
+                    <th style="padding:8px;">Presente</th>
+                    <th style="padding:8px;">Tarde</th>
+                    <th style="padding:8px;">Ausente</th>
+                  </tr>
+                  <tr>
+                    <td style="padding:8px;border-bottom:1px solid #e5e7eb;">Docentes</td>
+                    <td style="padding:8px;text-align:center;border-bottom:1px solid #e5e7eb;">%d</td>
+                    <td style="padding:8px;text-align:center;border-bottom:1px solid #e5e7eb;">%d</td>
+                    <td style="padding:8px;text-align:center;border-bottom:1px solid #e5e7eb;">%d</td>
+                  </tr>
+                  <tr>
+                    <td style="padding:8px;">Director</td>
+                    <td style="padding:8px;text-align:center;">%d</td>
+                    <td style="padding:8px;text-align:center;">%d</td>
+                    <td style="padding:8px;text-align:center;">%d</td>
+                  </tr>
+                </table>
+                """.formatted(toName, dateLabel, totalToday,
+                presentTeacher, lateTeacher, absentTeacher,
+                presentDirector, lateDirector, absentDirector);
         send(to, subject, body);
     }
 

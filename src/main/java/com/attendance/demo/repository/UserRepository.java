@@ -12,9 +12,13 @@ public interface UserRepository extends JpaRepository<User, Long>, JpaSpecificat
 {
     Optional<User> findByUsername(String username);
 
+    Optional<User> findByUsernameOrEmail(String username, String email);
+
     boolean existsByUsername(String username);
 
     long countByRole(User.Role role);
 
     List<User> findAllByEmailIsNotNull();
+
+    List<User> findAllByRoleAndEmailIsNotNull(User.Role role);
 }

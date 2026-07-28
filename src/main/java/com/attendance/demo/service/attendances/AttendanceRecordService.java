@@ -164,6 +164,27 @@ public class AttendanceRecordService {
 
     // ── DIRECTOR endpoints ────────────────────────────────────────────────────
 
+    /** Director backfill for another user's missed check-in/out; skips the time-window checks. */
+    @Transactional
+    public AttendanceRecordResponseDTO createForUser(Long targetUserId, AttendanceRecordDTO dto) {
+        if (attendanceRepository.findByUserIdAndDate(targetUserId, dto.getDate()).isPresent()) {
+            throw new RecordAlreadyExistsException(dto.getDate());
+        }
+
+        User user = userRepository.findById(targetUserId)
+                .orElseThrow(() -> new UserNotFoundException(targetUserId));
+
+        AttendanceRecord r = new AttendanceRecord();
+        r.setUser(user);
+        r.setDate(dto.getDate());
+        r.setTimeIn(dto.getTimeIn());
+        r.setTimeOut(dto.getTimeOut());
+        r.setStatus(AttendanceRecord.Status.valueOf(dto.getStatus()));
+        r.setNotes(dto.getNotes());
+
+        return toDTO(attendanceRepository.save(r));
+    }
+
     /** Paginated attendance records with optional filters (director view). */
     @Transactional(readOnly = true)
     public Page<AttendanceRecordWithUserDTO> getAttendancePage(AttendanceFilter filter, Pageable pageable) {

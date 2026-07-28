@@ -32,6 +32,11 @@ public class UserSpecification {
                 ));
             }
 
+            // filtro por rol
+            if ( userFilter.getRole() != null && !userFilter.getRole().isBlank() ) {
+                predicates.add( criteriaBuilder.equal(root.get("role"), User.Role.valueOf(userFilter.getRole())));
+            }
+
             // filtro por fecha desde
             if ( userFilter.getFromDate() != null ){
                 predicates.add( criteriaBuilder.greaterThanOrEqualTo(attendanceRecordJoin.get("date"), userFilter.getFromDate()));

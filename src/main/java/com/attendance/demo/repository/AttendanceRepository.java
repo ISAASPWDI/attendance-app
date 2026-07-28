@@ -1,6 +1,7 @@
 package com.attendance.demo.repository;
 
 import com.attendance.demo.entity.AttendanceRecord;
+import com.attendance.demo.entity.User;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 
@@ -16,5 +17,9 @@ public interface AttendanceRepository
 
     long countByStatusAndDate(AttendanceRecord.Status status, LocalDate date);
 
+    long countByStatusAndDateAndUser_Role(AttendanceRecord.Status status, LocalDate date, User.Role role);
+
     void deleteByDate(LocalDate date);
+
+    void deleteByDateBetween(LocalDate start, LocalDate end);
 }
