@@ -186,12 +186,16 @@ public class AttendanceRecordService {
 
     // ── DIRECTOR endpoints ────────────────────────────────────────────────────
 
-    /** Director backfill for another user's missed check-in/out; skips the time-window checks. */
+    /** Director backfill for another user's missed check-in/out on a past working day; skips only the time-window checks. */
     @Transactional
     public AttendanceRecordResponseDTO createForUser(Long targetUserId, AttendanceRecordDTO dto) {
         if (attendanceRepository.findByUserIdAndDate(targetUserId, dto.getDate()).isPresent()) {
             throw new RecordAlreadyExistsException(dto.getDate());
         }
+        if (dto.getDate().isAfter(LocalDate.now())) {
+            throw new IllegalStateException("No se puede registrar asistencia en una fecha futura");
+        }
+        validateNotHoliday(dto.getDate());
 
         User user = userRepository.findById(targetUserId)
                 .orElseThrow(() -> new UserNotFoundException(targetUserId));

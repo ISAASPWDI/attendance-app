@@ -152,7 +152,7 @@ POST /api/users/{userId}/photo        — multipart/form-data, campo "file"
 
 **Quick Check-Out:** solo permitido entre la 1:00 pm y las 2:00 pm (hora del servidor; 1:30 pm es la hora objetivo — de 1:00 a 1:32 se considera a tiempo, de 1:32 a 2:00 es tolerancia — y a las 2:00 pm cierra por completo). Fuera de esa ventana, devuelve `400`. La salida nunca afecta el `status` del día (que depende solo de la entrada); si nunca se registra, el frontend simplemente indica "No registró salida".
 
-**Feriados de Perú (`util/PeruHolidays`):** `POST /api/attendances`, `/quick-checkin` y `/quick-checkout` devuelven `400` si la fecha es un feriado nacional (calendario 2026 hardcodeado — Año Nuevo, Semana Santa, Fiestas Patrias, etc., 16 fechas en total). `GET /api/attendances/day-status` expone `{ "holiday": true, "holidayName": "Fiestas Patrias", "weekend": false }` para que el frontend deshabilite el check-in/out proactivamente. El resumen del dashboard (`/api/dashboard/summary`) también devuelve todo en 0 los días feriados, igual que fines de semana. `POST /api/attendances/for-user/{userId}` (backfill del director) **no** aplica esta validación — es justamente para corregir asistencias de días excepcionales. > **Mantenimiento:** la lista de feriados está hardcodeada para 2026 y debe actualizarse cada año (`Jueves Santo`/`Viernes Santo` son móviles).
+**Feriados de Perú (`util/PeruHolidays`):** `POST /api/attendances`, `/quick-checkin` y `/quick-checkout` devuelven `400` si la fecha es un feriado nacional (calendario 2026 hardcodeado — Año Nuevo, Semana Santa, Fiestas Patrias, etc., 16 fechas en total). `GET /api/attendances/day-status` expone `{ "holiday": true, "holidayName": "Fiestas Patrias", "weekend": false }` para que el frontend deshabilite el check-in/out proactivamente. El resumen del dashboard (`/api/dashboard/summary`) también devuelve todo en 0 los días feriados, igual que fines de semana. `POST /api/attendances/for-user/{userId}` (backfill del director) **sí** valida feriado (nadie debía asistir ese día, no hay nada que "corregir") y además rechaza fechas futuras (`400`) — solo puede completar asistencias de días laborables ya pasados o de hoy. Solo omite las ventanas horarias de entrada/salida, no el resto de reglas. > **Mantenimiento:** la lista de feriados está hardcodeada para 2026 y debe actualizarse cada año (`Jueves Santo`/`Viernes Santo` son móviles).
 
 **GET /api/attendances/me:** acepta los mismos parámetros de filtro que la vista DIRECTOR (`status`, `fromDate`, `toDate`, `dayOfWeek`, `sortBy` — solo `date`/`status`, no `teacherName` — `order`, `page`, `size`) pero siempre restringido al usuario autenticado; devuelve `AttendanceRecordResponseDTO` (sin nombre de docente, ya que es siempre el propio).
 
@@ -166,7 +166,7 @@ POST /api/users/{userId}/photo        — multipart/form-data, campo "file"
 | `POST`   | `/api/attendances/for-user/{userId}` | Crea un registro para otro usuario (backfill), sin validar las ventanas de entrada/salida (solo DIRECTOR) |
 | `DELETE` | `/api/attendances/by-date/{date}` | Elimina todos los registros de una fecha (solo DIRECTOR) |
 
-**`POST /api/attendances/for-user/{userId}`:** pensado para cuando un docente tuvo una falla/interrupción y no pudo marcar dentro de su ventana — el director registra el mismo body que `POST /api/attendances` (`date`, `timeIn`, `timeOut`, `status`, `notes`) pero **sin** las validaciones de ventana horaria. Sigue respetando la regla de un registro por día por usuario (`409` si ya existe).
+**`POST /api/attendances/for-user/{userId}`:** pensado para cuando un docente tuvo una falla/interrupción y no pudo marcar dentro de su ventana — el director registra el mismo body que `POST /api/attendances` (`date`, `timeIn`, `timeOut`, `status`, `notes`) pero **sin** las validaciones de ventana horaria. Sigue respetando la regla de un registro por día por usuario (`409` si ya existe), sigue bloqueando feriados (`400`) y rechaza fechas futuras (`400`) — solo corrige asistencias de días laborables pasados o de hoy.
 
 **Parámetros de filtro para GET /api/attendances:**
 
@@ -242,7 +242,7 @@ Aceptan los mismos parámetros de filtro que `GET /api/attendances`.
 **Columnas del reporte:**
 `Docente | Rol | Fecha | Día | Entrada | Salida | Estado | Notas | Foto | Firma`
 
-`Día` es el día de la semana (Lunes..Domingo) derivado de `Fecha`. `Fecha` se formatea `dd/MM/yyyy`, `Entrada`/`Salida` solo muestran hora y minuto (`HH:mm`), y `Estado` se muestra en español (`Presente`/`Tarde`/`Ausente`). Foto y Firma se descargan desde Cloudinary y se **embeben como imágenes reales** en la celda (no como texto/URL). Si una imagen falta o no se puede descargar, la celda queda en blanco sin romper el resto del reporte. Por defecto, los registros se ordenan del más reciente al más antiguo (`order=desc`).
+`Día` es el día de la semana (Lunes..Domingo) derivado de `Fecha`. `Fecha` se formatea `dd/MM/yyyy`, `Entrada`/`Salida` solo muestran hora y minuto (`HH:mm`), y `Estado` se muestra en español (`Presente`/`Tarde`/`Ausente`). Foto y Firma se descargan desde Cloudinary y se **embeben como imágenes reales** en la celda (no como texto/URL) — la **Foto se recorta a un círculo** (centrado, esquinas transparentes, vía `Graphics2D`/`Ellipse2D`, sin dependencias nuevas), la **Firma se deja rectangular** tal cual. Si una imagen falta o no se puede descargar, la celda queda en blanco sin romper el resto del reporte. Por defecto, los registros se ordenan del más reciente al más antiguo (`order=desc`).
 
 **Ejemplo de descarga con filtro de fecha:**
 ```
@@ -322,7 +322,7 @@ Los reportes incluyen, tanto de docentes como del director:
 - Fecha y día de la semana, hora de entrada, hora de salida
 - Estado (`Present` / `Late` / `Absent`)
 - Notas
-- Foto de perfil y firma, **embebidas como imágenes** dentro de la celda (no URLs) — orden por defecto: más recientes primero.
+- Foto de perfil (recortada a círculo) y firma (rectangular), **embebidas como imágenes** dentro de la celda (no URLs) — orden por defecto: más recientes primero.
 
 Los reportes se generan al vuelo con los mismos filtros de la vista del director. No hay caché de reportes — cada descarga consulta la DB en el momento, pero las imágenes de un mismo usuario se descargan una sola vez por reporte y se reutilizan en todas sus filas.
 

@@ -34,6 +34,11 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.awt.Color;
+import java.awt.Graphics2D;
+import java.awt.RenderingHints;
+import java.awt.geom.Ellipse2D;
+import java.awt.image.BufferedImage;
+import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -44,6 +49,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import javax.imageio.ImageIO;
 
 @Service
 public class ReportService {
@@ -98,8 +104,8 @@ public class ReportService {
                 row.createCell(6).setCellValue(statusLabel(r.getStatus()));
                 row.createCell(7).setCellValue(r.getNotes() != null ? r.getNotes() : "");
 
-                embedExcelImage(workbook, drawing, sheet, imageCache, user.getPhotoUrl(), 8, rowNum);
-                embedExcelImage(workbook, drawing, sheet, imageCache, user.getSignatureUrl(), 9, rowNum);
+                embedExcelImage(workbook, drawing, sheet, imageCache, user.getPhotoUrl(), 8, rowNum, true);
+                embedExcelImage(workbook, drawing, sheet, imageCache, user.getSignatureUrl(), 9, rowNum, false);
 
                 rowNum++;
             }
@@ -118,13 +124,20 @@ public class ReportService {
     }
 
     private void embedExcelImage(Workbook workbook, Drawing<?> drawing, Sheet sheet,
-                                  Map<String, byte[]> imageCache, String url, int col, int rowNum) {
+                                  Map<String, byte[]> imageCache, String url, int col, int rowNum, boolean circular) {
         byte[] bytes = fetchImageBytes(url, imageCache);
         if (bytes == null) return;
         try {
-            int pictureIdx = workbook.addPicture(bytes, detectPoiPictureType(bytes));
-            ClientAnchor anchor = drawing.createAnchor(0, 0, 0, 0, col, rowNum, col + 1, rowNum + 1);
-            drawing.createPicture(anchor, pictureIdx);
+            if (circular) {
+                bytes = circularCrop(bytes);
+                int pictureIdx = workbook.addPicture(bytes, Workbook.PICTURE_TYPE_PNG);
+                ClientAnchor anchor = drawing.createAnchor(0, 0, 0, 0, col, rowNum, col + 1, rowNum + 1);
+                drawing.createPicture(anchor, pictureIdx);
+            } else {
+                int pictureIdx = workbook.addPicture(bytes, detectPoiPictureType(bytes));
+                ClientAnchor anchor = drawing.createAnchor(0, 0, 0, 0, col, rowNum, col + 1, rowNum + 1);
+                drawing.createPicture(anchor, pictureIdx);
+            }
         } catch (Exception ignored) {
             // Corrupt/unsupported image bytes — leave the cell blank rather than failing the report.
         }
@@ -181,8 +194,8 @@ public class ReportService {
             addCell(table, statusLabel(r.getStatus()), rFont, bg);
             addCell(table, r.getNotes() != null ? r.getNotes() : "-", rFont, bg);
 
-            addImageCell(table, fetchImageBytes(user.getPhotoUrl(), imageCache), bg);
-            addImageCell(table, fetchImageBytes(user.getSignatureUrl(), imageCache), bg);
+            addImageCell(table, fetchImageBytes(user.getPhotoUrl(), imageCache), bg, true);
+            addImageCell(table, fetchImageBytes(user.getSignatureUrl(), imageCache), bg, false);
         }
 
         doc.add(table);
@@ -203,11 +216,11 @@ public class ReportService {
         table.addCell(cell);
     }
 
-    private void addImageCell(PdfPTable table, byte[] bytes, Color bg) {
+    private void addImageCell(PdfPTable table, byte[] bytes, Color bg, boolean circular) {
         PdfPCell cell;
         if (bytes != null) {
             try {
-                Image img = Image.getInstance(bytes);
+                Image img = Image.getInstance(circular ? circularCrop(bytes) : bytes);
                 img.scaleToFit(35, 35);
                 cell = new PdfPCell(img, false);
             } catch (Exception e) {
@@ -254,6 +267,31 @@ public class ReportService {
         }
         cache.put(url, bytes);
         return bytes;
+    }
+
+    /** Center-crops to a square and clips to a circle (transparent corners), for the "Foto" column only. */
+    private byte[] circularCrop(byte[] bytes) {
+        try {
+            BufferedImage src = ImageIO.read(new ByteArrayInputStream(bytes));
+            if (src == null) return bytes;
+
+            int size = Math.min(src.getWidth(), src.getHeight());
+            int ox = (src.getWidth() - size) / 2;
+            int oy = (src.getHeight() - size) / 2;
+
+            BufferedImage circular = new BufferedImage(size, size, BufferedImage.TYPE_INT_ARGB);
+            Graphics2D g2 = circular.createGraphics();
+            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            g2.setClip(new Ellipse2D.Float(0, 0, size, size));
+            g2.drawImage(src, -ox, -oy, null);
+            g2.dispose();
+
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            ImageIO.write(circular, "png", out);
+            return out.toByteArray();
+        } catch (Exception e) {
+            return bytes;
+        }
     }
 
     private int detectPoiPictureType(byte[] bytes) {
