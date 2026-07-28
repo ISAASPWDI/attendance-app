@@ -3,11 +3,13 @@ package com.attendance.demo.service.attendances;
 import com.attendance.demo.dto.attendances.AttendanceRecordResponseDTO;
 import com.attendance.demo.dto.attendances.AttendanceRecordWithUserDTO;
 import com.attendance.demo.dto.attendances.DashboardSummaryDTO;
+import com.attendance.demo.dto.attendances.DayStatusDTO;
 import com.attendance.demo.dto.attendances.AttendanceRecordDTO;
 import com.attendance.demo.dto.filter.AttendanceFilter;
 import com.attendance.demo.entity.AttendanceRecord;
 import com.attendance.demo.entity.User;
 import com.attendance.demo.exception.attendances.RecordAlreadyExistsException;
+import com.attendance.demo.exception.attendances.RecordHolidayException;
 import com.attendance.demo.exception.attendances.RecordNotFoundException;
 import com.attendance.demo.exception.attendances.RecordTimeInWindowException;
 import com.attendance.demo.exception.attendances.RecordTimeOutWindowException;
@@ -16,6 +18,7 @@ import com.attendance.demo.repository.AttendanceRepository;
 import com.attendance.demo.repository.UserRepository;
 import com.attendance.demo.specification.AttendanceSpecification;
 import com.attendance.demo.util.DayOfWeekEs;
+import com.attendance.demo.util.PeruHolidays;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -52,6 +55,7 @@ public class AttendanceRecordService {
         if (attendanceRepository.findByUserIdAndDate(userId, dto.getDate()).isPresent()) {
             throw new RecordAlreadyExistsException(dto.getDate());
         }
+        validateNotHoliday(dto.getDate());
         validateTimeIn(dto.getTimeIn());
         validateTimeOut(dto.getTimeOut());
 
@@ -76,6 +80,7 @@ public class AttendanceRecordService {
         if (attendanceRepository.findByUserIdAndDate(userId, today).isPresent()) {
             throw new RecordAlreadyExistsException(today);
         }
+        validateNotHoliday(today);
         LocalTime now = LocalTime.now();
         if (now.isBefore(ENTRY_WINDOW_START) || now.isAfter(ENTRY_WINDOW_END)) {
             throw new IllegalStateException("La entrada rápida solo está habilitada de 7:30 am a 9:00 am");
@@ -100,6 +105,7 @@ public class AttendanceRecordService {
     /** Quick check-out at current time. Only allowed between 1:00 pm and 2:00 pm. */
     @Transactional
     public AttendanceRecordResponseDTO quickCheckOut(Long userId) {
+        validateNotHoliday(LocalDate.now());
         LocalTime now = LocalTime.now();
         if (now.isBefore(EXIT_WINDOW_START) || now.isAfter(EXIT_WINDOW_END)) {
             throw new IllegalStateException("La salida rápida solo está habilitada de 1:00 pm a 2:00 pm");
@@ -111,6 +117,16 @@ public class AttendanceRecordService {
 
         r.setTimeOut(now);
         return toDTO(attendanceRepository.save(r));
+    }
+
+    /** Whether today is a Peru holiday or a weekend — check-in/check-out are blocked on both. */
+    @Transactional(readOnly = true)
+    public DayStatusDTO getTodayStatus() {
+        LocalDate today = LocalDate.now();
+        DayOfWeek dow = today.getDayOfWeek();
+        boolean weekend = dow == DayOfWeek.SATURDAY || dow == DayOfWeek.SUNDAY;
+        boolean holiday = PeruHolidays.isHoliday(today);
+        return new DayStatusDTO(holiday, holiday ? PeruHolidays.nameOf(today) : null, weekend);
     }
 
     /** Returns today's attendance record for the authenticated teacher, if any. */
@@ -151,6 +167,12 @@ public class AttendanceRecordService {
     private void validateTimeOut(LocalTime timeOut) {
         if (timeOut != null && (timeOut.isBefore(EXIT_WINDOW_START) || timeOut.isAfter(EXIT_WINDOW_END))) {
             throw new RecordTimeOutWindowException(timeOut);
+        }
+    }
+
+    private void validateNotHoliday(LocalDate date) {
+        if (PeruHolidays.isHoliday(date)) {
+            throw new RecordHolidayException(date, PeruHolidays.nameOf(date));
         }
     }
 
@@ -200,12 +222,12 @@ public class AttendanceRecordService {
         return count;
     }
 
-    /** Dashboard summary: totals and today's attendance stats. Weekends always report all-zero — attendance isn't tracked Sat/Sun. */
+    /** Dashboard summary: totals and today's attendance stats. Weekends and Peru holidays always report all-zero — attendance isn't tracked those days. */
     @Transactional(readOnly = true)
     public DashboardSummaryDTO getDashboardSummary() {
         LocalDate today = LocalDate.now();
         DayOfWeek dow = today.getDayOfWeek();
-        if (dow == DayOfWeek.SATURDAY || dow == DayOfWeek.SUNDAY) {
+        if (dow == DayOfWeek.SATURDAY || dow == DayOfWeek.SUNDAY || PeruHolidays.isHoliday(today)) {
             return new DashboardSummaryDTO(0, 0, 0, 0);
         }
 

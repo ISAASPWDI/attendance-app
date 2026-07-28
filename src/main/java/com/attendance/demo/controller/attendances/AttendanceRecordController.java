@@ -4,6 +4,7 @@ import com.attendance.demo.config.CustomUserDetails;
 import com.attendance.demo.dto.attendances.AttendanceRecordDTO;
 import com.attendance.demo.dto.attendances.AttendanceRecordResponseDTO;
 import com.attendance.demo.dto.attendances.AttendanceRecordWithUserDTO;
+import com.attendance.demo.dto.attendances.DayStatusDTO;
 import com.attendance.demo.dto.filter.AttendanceFilter;
 import com.attendance.demo.service.attendances.AttendanceRecordService;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -34,6 +35,12 @@ public class AttendanceRecordController {
             @AuthenticationPrincipal CustomUserDetails userDetails) {
         AttendanceRecordResponseDTO record = attendanceRecordService.getTodayRecord(userDetails.user.getId());
         return record != null ? ResponseEntity.ok(record) : ResponseEntity.noContent().build();
+    }
+
+    /** Whether today is a Peru holiday or weekend — used by the frontend to disable check-in/out. */
+    @GetMapping("/day-status")
+    public ResponseEntity<DayStatusDTO> getTodayStatus() {
+        return ResponseEntity.ok(attendanceRecordService.getTodayStatus());
     }
 
     /** Manual attendance creation (custom time/status). */

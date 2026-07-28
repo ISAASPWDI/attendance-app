@@ -42,6 +42,11 @@ public class RecordExceptionHandler {
         return build(HttpStatus.CONFLICT, "Registro ya existe", ex.getMessage(), request);
     }
 
+    @ExceptionHandler(RecordHolidayException.class)
+    public ResponseEntity<ErrorResponse> handleRecordHoliday(RecordHolidayException ex, WebRequest request) {
+        return build(HttpStatus.BAD_REQUEST, "Día feriado", ex.getMessage(), request);
+    }
+
     @ExceptionHandler(IllegalStateException.class)
     public ResponseEntity<ErrorResponse> handleIllegalState(IllegalStateException ex, WebRequest request) {
         return build(HttpStatus.BAD_REQUEST, "Operación no permitida", ex.getMessage(), request);

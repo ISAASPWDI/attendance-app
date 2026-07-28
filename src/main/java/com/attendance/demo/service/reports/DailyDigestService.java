@@ -6,6 +6,7 @@ import com.attendance.demo.repository.AttendanceRepository;
 import com.attendance.demo.repository.UserRepository;
 import com.attendance.demo.service.email.EmailService;
 import com.attendance.demo.util.DayOfWeekEs;
+import com.attendance.demo.util.PeruHolidays;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -34,6 +35,9 @@ public class DailyDigestService {
     @Scheduled(cron = "0 30 14 * * MON-FRI", zone = "America/Lima")
     public void sendDailyDigest() {
         LocalDate today = LocalDate.now();
+        if (PeruHolidays.isHoliday(today)) {
+            return;
+        }
         String dateLabel = DayOfWeekEs.label(today) + " " + today.format(DATE_FORMAT);
 
         long totalToday = attendanceRepository.countByDate(today);

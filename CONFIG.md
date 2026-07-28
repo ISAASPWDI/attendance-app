@@ -127,6 +127,7 @@ POST /api/users/{userId}/photo        — multipart/form-data, campo "file"
 | Método | Ruta | Descripción |
 |--------|------|-------------|
 | `GET`  | `/api/attendances/today` | Registro de hoy del docente autenticado (204 si no hay) |
+| `GET`  | `/api/attendances/day-status` | Indica si hoy es feriado (Perú) o fin de semana — cualquier usuario autenticado |
 | `POST` | `/api/attendances` | Check-in manual con tiempo y estado personalizados |
 | `POST` | `/api/attendances/quick-checkin` | Check-in rápido a la hora actual (solo entre 7:30 am y 9:00 am) |
 | `POST` | `/api/attendances/quick-checkout` | Check-out rápido a la hora actual (solo entre 1:00 pm y 2:00 pm) |
@@ -150,6 +151,8 @@ POST /api/users/{userId}/photo        — multipart/form-data, campo "file"
 - Si es después de 08:20 (hasta las 9:00 am) → `Late`
 
 **Quick Check-Out:** solo permitido entre la 1:00 pm y las 2:00 pm (hora del servidor; 1:30 pm es la hora objetivo — de 1:00 a 1:32 se considera a tiempo, de 1:32 a 2:00 es tolerancia — y a las 2:00 pm cierra por completo). Fuera de esa ventana, devuelve `400`. La salida nunca afecta el `status` del día (que depende solo de la entrada); si nunca se registra, el frontend simplemente indica "No registró salida".
+
+**Feriados de Perú (`util/PeruHolidays`):** `POST /api/attendances`, `/quick-checkin` y `/quick-checkout` devuelven `400` si la fecha es un feriado nacional (calendario 2026 hardcodeado — Año Nuevo, Semana Santa, Fiestas Patrias, etc., 16 fechas en total). `GET /api/attendances/day-status` expone `{ "holiday": true, "holidayName": "Fiestas Patrias", "weekend": false }` para que el frontend deshabilite el check-in/out proactivamente. El resumen del dashboard (`/api/dashboard/summary`) también devuelve todo en 0 los días feriados, igual que fines de semana. `POST /api/attendances/for-user/{userId}` (backfill del director) **no** aplica esta validación — es justamente para corregir asistencias de días excepcionales. > **Mantenimiento:** la lista de feriados está hardcodeada para 2026 y debe actualizarse cada año (`Jueves Santo`/`Viernes Santo` son móviles).
 
 **GET /api/attendances/me:** acepta los mismos parámetros de filtro que la vista DIRECTOR (`status`, `fromDate`, `toDate`, `dayOfWeek`, `sortBy` — solo `date`/`status`, no `teacherName` — `order`, `page`, `size`) pero siempre restringido al usuario autenticado; devuelve `AttendanceRecordResponseDTO` (sin nombre de docente, ya que es siempre el propio).
 
