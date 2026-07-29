@@ -204,12 +204,12 @@ GET /api/attendances?teacherName=garcia&status=Late&fromDate=2026-05-01&dayOfWee
 
 ---
 
-### Dashboard (`/api/dashboard`) — Solo DIRECTOR
+### Dashboard (`/api/dashboard`)
 
-| Método | Ruta | Descripción |
-|--------|------|-------------|
-| `GET` | `/api/dashboard/summary` | Resumen del día actual |
-| `GET` | `/api/dashboard/purge-warning` | Aviso de purga próxima (últimos 7 días del mes) |
+| Método | Ruta | Acceso | Descripción |
+|--------|------|--------|-------------|
+| `GET` | `/api/dashboard/summary` | DIRECTOR | Resumen del día actual |
+| `GET` | `/api/dashboard/purge-warning` | Cualquier autenticado | Aviso de purga próxima (últimos 7 días del mes) |
 
 **Response de `/summary`:**
 ```json
@@ -226,7 +226,7 @@ GET /api/attendances?teacherName=garcia&status=Late&fromDate=2026-05-01&dayOfWee
 ```json
 { "active": true, "daysRemaining": 5, "purgeDate": "2026-07-31" }
 ```
-> `active` es `true` cuando quedan 6 días o menos para el fin del mes calendario actual. Es un cálculo al vuelo (no persiste nada), pensado para que el frontend muestre un banner recordándole al director que verifique que todas las asistencias del mes estén registradas (usando `POST /api/attendances/for-user/{userId}` para completar las que falten) antes de que el job mensual las elimine.
+> `active` es `true` cuando quedan 6 días o menos para el fin del mes calendario actual. Es un cálculo al vuelo (no persiste nada, mismo resultado sin importar el rol), pensado para que el frontend muestre un banner recordando que se acerca la purga del mes. El **DIRECTOR** lo ve siempre que esté activo (en todas sus páginas), recordándole verificar que todas las asistencias estén registradas (usando `POST /api/attendances/for-user/{userId}` para completar las que falten). El **TEACHER** ve el mismo banner (mismo formato/texto adaptado), pero el frontend solo lo muestra durante las ventanas de registro de entrada/salida (7:30–9:00 am y 1:00–2:00 pm) — fuera de esas horas queda oculto aunque `active` siga en `true`, ya que no tiene sentido recordárselo cuando no puede hacer nada al respecto.
 
 ---
 

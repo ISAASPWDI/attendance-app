@@ -27,8 +27,9 @@ public class DashboardController {
         return ResponseEntity.ok(attendanceRecordService.getDashboardSummary());
     }
 
-    /** Warns during the last 7 days of the month that attendance history will be purged. */
+    /** Warns during the last 7 days of the month that attendance history will be purged. Any authenticated user (TEACHER or DIRECTOR). */
     @GetMapping("/purge-warning")
+    @PreAuthorize("isAuthenticated()")
     public ResponseEntity<PurgeWarningDTO> getPurgeWarning() {
         LocalDate today = LocalDate.now();
         LocalDate lastDay = today.with(TemporalAdjusters.lastDayOfMonth());
