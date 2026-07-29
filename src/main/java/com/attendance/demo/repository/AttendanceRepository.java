@@ -22,4 +22,6 @@ public interface AttendanceRepository
     void deleteByDate(LocalDate date);
 
     void deleteByDateBetween(LocalDate start, LocalDate end);
+
+    void deleteByUserId(Long userId);
 }

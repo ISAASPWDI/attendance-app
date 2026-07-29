@@ -269,21 +269,23 @@ Ambos usan la **misma plantilla genérica de EmailJS** (`EMAILJS_TEMPLATE_ID`) q
 
 ---
 
-### Usuarios (`/api/users`) — Solo DIRECTOR
+### Usuarios (`/api/users`)
 
-| Método | Ruta | Descripción |
-|--------|------|-------------|
-| `GET`  | `/api/users` | Lista paginada de usuarios con sus registros (filtros: `username`, `status`, `role` — `TEACHER`/`DIRECTOR`, `fromDate`, `toDate`) |
-| `GET`  | `/api/users/{id}` | Detalle de un usuario con todos sus registros |
-| `POST` | `/api/users/{id}/signature` | Subir imagen de firma (multipart) |
-| `POST` | `/api/users/{id}/fingerprint` | Subir imagen de huella (multipart) |
-| `POST` | `/api/users/{id}/photo` | Subir foto de perfil (multipart) |
+| Método | Ruta | Acceso | Descripción |
+|--------|------|--------|-------------|
+| `GET`    | `/api/users` | DIRECTOR | Lista paginada de usuarios con sus registros (filtros: `username`, `status`, `role` — `TEACHER`/`DIRECTOR`, `fromDate`, `toDate`) |
+| `GET`    | `/api/users/{id}` | DIRECTOR | Detalle de un usuario con todos sus registros |
+| `PATCH`  | `/api/users/{id}` | Propio usuario o DIRECTOR | Actualiza `firstName`/`lastName` (nunca `email`, no existe ese campo en el DTO). `role` solo se aplica si quien llama es DIRECTOR |
+| `DELETE` | `/api/users/{id}` | Propio usuario o DIRECTOR | Un DIRECTOR puede eliminar a cualquier otro usuario. Cualquiera (TEACHER o DIRECTOR) puede eliminar **su propia cuenta**, excepto un DIRECTOR eliminándose a sí mismo (`400 SelfDeleteException`, para no dejar el sistema sin director). Al eliminar un usuario también se eliminan en cascada sus registros de asistencia (`AttendanceRepository.deleteByUserId`) para evitar un error de FK |
+| `POST`   | `/api/users/{id}/signature` | Propio usuario o DIRECTOR | Subir imagen de firma (multipart) |
+| `POST`   | `/api/users/{id}/fingerprint` | Propio usuario o DIRECTOR | Subir imagen de huella (multipart) |
+| `POST`   | `/api/users/{id}/photo` | Propio usuario o DIRECTOR | Subir foto de perfil (multipart) |
 
 ---
 
 ## Roles y seguridad
 
-- **`TEACHER`**: puede registrar y ver su propia asistencia. Puede subir su propia firma y huella.
+- **`TEACHER`**: puede registrar y ver su propia asistencia. Puede subir su propia firma y huella, editar su nombre (no su correo) y eliminar su propia cuenta.
 - **`DIRECTOR`**: acceso completo — lista de todos los registros, dashboard, reportes, eliminación, subida de imágenes de cualquier usuario.
 
 El token JWT se envía en el header:

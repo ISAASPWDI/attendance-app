@@ -6,6 +6,7 @@ import com.attendance.demo.dto.users.UpdateUserDTO;
 import com.attendance.demo.dto.users.UserDetailDTO;
 import com.attendance.demo.entity.User;
 import com.attendance.demo.exception.users.UserNotFoundException;
+import com.attendance.demo.repository.AttendanceRepository;
 import com.attendance.demo.repository.UserRepository;
 import com.attendance.demo.specification.UserSpecification;
 import com.attendance.demo.util.DayOfWeekEs;
@@ -23,6 +24,9 @@ public class UserService {
 
     @Autowired
     UserRepository userRepository;
+
+    @Autowired
+    AttendanceRepository attendanceRepository;
 
     @Transactional(readOnly = true)
     public Page<UserDetailDTO> getUsersAndAttendanceRecords(UserFilter userFilter, Pageable pageable) {
@@ -78,6 +82,7 @@ public class UserService {
         if (!userRepository.existsById(userId)) {
             throw new UserNotFoundException(userId);
         }
+        attendanceRepository.deleteByUserId(userId);
         userRepository.deleteById(userId);
     }
 

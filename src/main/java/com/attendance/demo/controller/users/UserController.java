@@ -79,12 +79,18 @@ public class UserController {
         return ResponseEntity.ok(userService.updateUser(userId, dto, isDirector));
     }
 
+    /** DIRECTOR can delete any other user; anyone (TEACHER or DIRECTOR) can delete their own account, except a DIRECTOR deleting themself. */
     @DeleteMapping("/{userId}")
-    @PreAuthorize("hasAuthority('DIRECTOR')")
     public ResponseEntity<Void> deleteUser(
             @PathVariable Long userId,
             @AuthenticationPrincipal CustomUserDetails userDetails) {
-        if (userDetails.user.getId().equals(userId)) {
+        boolean isSelf = userDetails.user.getId().equals(userId);
+        boolean isDirector = userDetails.user.getRole() == User.Role.DIRECTOR;
+
+        if (!isSelf && !isDirector) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+        }
+        if (isSelf && isDirector) {
             throw new SelfDeleteException();
         }
         userService.deleteUser(userId);
